@@ -1,0 +1,60 @@
+const mongoose = require("mongoose");
+const User = require("../models/User");
+const Message = require("../models/Message");
+const { cloudinary } = require("../config/cloudinary");
+
+async function listUsers(req, res) {
+  const users = await User.find({ _id: { $ne: req.user.id } }).select("-password").sort({ isOnline: -1, fullName: 1 });
+  const unreadAgg = await Message.aggregate([
+    { $match: { receiverId: new mongoose.Types.ObjectId(req.user.id), seen: false } },
+    { $group: { _id: "$senderId", count: { $sum: 1 } } },
+  ]);
+  const unreadMap = new Map(unreadAgg.map((item) => [item._id.toString(), item.count]));
+
+  const enriched = users.map((u) => ({ ...u.toObject(), unreadCount: unreadMap.get(u._id.toString()) || 0 }));
+  res.json({ success: true, data: enriched });
+}
+
+async function searchUsers(req, res) {
+  const q = (req.query.q || "").trim();
+  const regex = new RegExp(q, "i");
+  const users = await User.find({
+    _id: { $ne: req.user.id },
+    $or: [{ fullName: regex }, { email: regex }],
+  })
+    .select("-password")
+    .limit(20);
+  res.json({ success: true, data: users });
+}
+
+async function updateProfile(req, res) {
+  const { fullName, bio, profilePic } = req.body;
+  const updates = {};
+
+  if (fullName) updates.fullName = fullName;
+  if (typeof bio === "string") updates.bio = bio;
+
+  if (profilePic) {
+    const upload = await cloudinary.uploader.upload(profilePic, {
+      folder: "chat-app/profiles",
+    });
+    updates.profilePic = upload.secure_url;
+  }
+
+  const user = await User.findByIdAndUpdate(req.user.id, updates, { new: true }).select("-password");
+  res.json({ success: true, message: "Profile updated", data: user });
+}
+
+async function deleteAccount(req, res) {
+  const userId = req.user.id;
+
+  await Message.deleteMany({
+    $or: [{ senderId: userId }, { receiverId: userId }],
+  });
+
+  await User.findByIdAndDelete(userId);
+
+  res.json({ success: true, message: "Account deleted successfully" });
+}
+
+module.exports = { listUsers, searchUsers, updateProfile, deleteAccount };
