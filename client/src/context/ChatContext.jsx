@@ -4,7 +4,7 @@ import { api } from "../services/api";
 import { useAuth } from "./AuthContext";
 
 const ChatContext = createContext(null);
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || "http://localhost:5000";
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || "https://quickchat-zlgq.onrender.com";
 
 export function ChatProvider({ children }) {
   const { user } = useAuth();
