@@ -51,16 +51,14 @@ app.use((err, _req, res, _next) => {
 
 registerSocketHandlers(io);
 
-const PORT = process.env.PORT || 5000;
 
 async function start() {
   try {
     await connectDB();
     connectCloudinary();
-    if (!process.env.VERCEL) {
-      server.listen(PORT, () => {
-        console.log(`Server running on port ${PORT}`);
-      });
+    if (process.env.NODE_ENV !== "production") {
+      const PORT = process.env.PORT || 5000;
+      server.listen(PORT, ()=> console.log("Server running on PORT: " + PORT));
     }
   } catch (error) {
     console.error("Startup failed:", error.message);
@@ -71,3 +69,5 @@ async function start() {
 start();
 
 module.exports = app;
+// Export index for Vercel
+export default index;
