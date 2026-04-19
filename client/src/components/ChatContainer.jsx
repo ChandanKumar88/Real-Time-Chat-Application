@@ -49,8 +49,8 @@ export default function ChatContainer({
   }
 
   return (
-    <main className={`grid h-full min-h-0 grid-rows-[auto,minmax(0,1fr),auto] overflow-hidden rounded-2xl p-2 backdrop-blur-sm sm:p-3 ${isDark ? "border border-white/10 bg-black/15" : "border border-slate-300 bg-white/70"}`}>
-      <header className={`mb-2 flex h-[58px] items-center justify-between rounded-xl px-3 sm:h-[64px] ${isDark ? "border border-white/10 bg-white/5" : "border border-slate-200 bg-white/80"}`}>
+    <main className={`grid h-full min-h-0 grid-rows-[58px,minmax(0,1fr),auto] overflow-hidden rounded-2xl p-2 backdrop-blur-sm sm:grid-rows-[64px,minmax(0,1fr),auto] sm:p-3 ${isDark ? "border border-white/10 bg-black/15" : "border border-slate-300 bg-white/70"}`}>
+      <header className={`flex h-[58px] items-center justify-between rounded-xl px-3 sm:h-[64px] ${isDark ? "border border-white/10 bg-white/5" : "border border-slate-200 bg-white/80"}`}>
         <div className="flex items-center gap-3">
           <ProfileAvatar src={selectedUser.profilePic} name={selectedUser.fullName} className="h-8 w-8 rounded-full object-cover sm:h-9 sm:w-9" />
           <div>
@@ -68,7 +68,8 @@ export default function ChatContainer({
         </button>
       </header>
 
-      <div className={`chat-scroll min-h-0 space-y-2 overflow-y-auto rounded-xl p-2 sm:p-3 ${isDark ? "bg-black/20" : "bg-white/60"}`}>
+      <div className={`chat-scroll min-h-0 overflow-y-auto rounded-xl ${isDark ? "bg-black/20" : "bg-white/60"}`}>
+        <div className="space-y-2 p-2 sm:p-3">
         {messages.map((m) => {
           const isMine = m.senderId === user._id;
           const avatarSrc = isMine ? user?.profilePic || "https://placehold.co/28x28?text=U" : selectedUser?.profilePic || "https://placehold.co/28x28?text=U";
@@ -106,6 +107,7 @@ export default function ChatContainer({
           );
         })}
         <div ref={messagesEndRef} />
+        </div>
       </div>
 
       <form onSubmit={onSend} className={`mt-2 rounded-xl p-2 ${isDark ? "border border-white/10 bg-black/40" : "border border-slate-300 bg-white/90"}`}>

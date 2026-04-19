@@ -47,7 +47,7 @@ export default function HomePage() {
   return (
     <div className={`min-h-screen p-2 md:grid md:place-items-center md:p-3 ${theme === "dark" ? "bg-black" : "bg-slate-100"}`}>
       <div
-        className={`relative w-full max-w-6xl overflow-hidden rounded-2xl p-2 lg:h-[92vh] lg:p-4 ${
+        className={`relative h-[calc(100vh-16px)] w-full max-w-6xl overflow-hidden rounded-2xl p-2 md:h-[calc(100vh-24px)] lg:h-[92vh] lg:p-4 ${
           theme === "dark" ? "border border-white/25 bg-[#15151c]" : "border border-slate-300 bg-white"
         }`}
         style={{
@@ -89,7 +89,7 @@ export default function HomePage() {
         />
       )}
 
-      <div className="grid min-h-[calc(100vh-84px)] grid-cols-1 gap-2 lg:h-full lg:min-h-0 lg:grid-cols-12 lg:gap-3">
+      <div className="grid h-[calc(100%-40px)] min-h-0 grid-cols-1 gap-2 lg:h-full lg:grid-cols-12 lg:gap-3">
       <div className="hidden lg:col-span-4 lg:block lg:h-full xl:col-span-3">
         <Sidebar
           users={filteredUsers}
@@ -121,7 +121,7 @@ export default function HomePage() {
         />
       )}
 
-      <div className="min-h-[76vh] lg:col-span-8 lg:h-full lg:min-h-0 xl:col-span-6">
+      <div className="min-h-0 h-full lg:col-span-8 xl:col-span-6">
         <ChatContainer
           user={user}
           selectedUser={selectedUser}
