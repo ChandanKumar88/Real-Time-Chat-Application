@@ -45,10 +45,10 @@ export default function HomePage() {
   const filteredUsers = useMemo(() => users, [users]);
 
   return (
-    <div className={`min-h-screen p-2 md:grid md:place-items-center md:p-3 ${theme === "dark" ? "bg-black" : "bg-slate-100"}`}>
+    <div className={`min-h-screen p-0 md:grid md:place-items-center md:p-3 ${theme === "dark" ? "bg-black" : "bg-slate-100"}`}>
       <div
-        className={`relative h-[calc(100vh-16px)] w-full max-w-6xl overflow-hidden rounded-2xl p-2 md:h-[calc(100vh-24px)] lg:h-[92vh] lg:p-4 ${
-          theme === "dark" ? "border border-white/25 bg-[#15151c]" : "border border-slate-300 bg-white"
+        className={`relative h-screen w-full max-w-6xl overflow-hidden p-2 md:h-[calc(100vh-24px)] md:rounded-2xl md:border md:p-2 lg:h-[92vh] lg:p-4 ${
+          theme === "dark" ? "bg-[#15151c] md:border-white/25" : "bg-white md:border-slate-300"
         }`}
         style={{
           backgroundImage:
@@ -60,7 +60,7 @@ export default function HomePage() {
           backgroundPosition: "center",
         }}
       >
-      <div className="mb-2 flex items-center justify-between lg:hidden">
+      <div className="mb-2 flex items-center justify-between px-2 pt-2 lg:hidden">
         <button
           onClick={() => setIsSidebarOpen(true)}
           className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm shadow ${
@@ -89,7 +89,7 @@ export default function HomePage() {
         />
       )}
 
-      <div className="grid h-[calc(100%-40px)] min-h-0 grid-cols-1 gap-2 lg:h-full lg:grid-cols-12 lg:gap-3">
+      <div className="grid h-[calc(100%-48px)] min-h-0 grid-cols-1 gap-2 px-2 pb-2 lg:h-full lg:grid-cols-12 lg:gap-3 lg:px-0 lg:pb-0">
       <div className="hidden lg:col-span-4 lg:block lg:h-full xl:col-span-3">
         <Sidebar
           users={filteredUsers}

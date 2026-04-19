@@ -51,7 +51,7 @@ export default function ChatContainer({
   }
 
   return (
-    <main className={`grid h-full min-h-0 grid-rows-[58px,minmax(0,1fr),auto] overflow-hidden rounded-2xl p-2 backdrop-blur-sm sm:grid-rows-[64px,minmax(0,1fr),auto] sm:p-3 ${isDark ? "border border-white/10 bg-black/15" : "border border-slate-300 bg-white/70"}`}>
+    <main className={`grid h-full min-h-0 grid-rows-[58px,minmax(0,1fr),auto] overflow-hidden rounded-2xl p-1.5 backdrop-blur-sm sm:grid-rows-[64px,minmax(0,1fr),auto] sm:p-3 ${isDark ? "border border-white/10 bg-black/15" : "border border-slate-300 bg-white/70"}`}>
       <header className={`flex h-[58px] items-center justify-between rounded-xl px-3 sm:h-[64px] ${isDark ? "border border-white/10 bg-white/5" : "border border-slate-200 bg-white/80"}`}>
         <div className="flex items-center gap-3">
           <ProfileAvatar src={selectedUser.profilePic} name={selectedUser.fullName} className="h-8 w-8 rounded-full object-cover sm:h-9 sm:w-9" />
@@ -74,7 +74,7 @@ export default function ChatContainer({
         ref={messagesContainerRef}
         className={`chat-scroll min-h-0 overflow-y-auto rounded-xl ${isDark ? "bg-black/20" : "bg-white/60"}`}
       >
-        <div className="space-y-2 p-2 sm:p-3">
+        <div className="space-y-2 p-1.5 sm:p-3">
         {messages.map((m) => {
           const isMine = m.senderId === user._id;
           const avatarSrc = isMine ? user?.profilePic || "https://placehold.co/28x28?text=U" : selectedUser?.profilePic || "https://placehold.co/28x28?text=U";
@@ -114,7 +114,7 @@ export default function ChatContainer({
         </div>
       </div>
 
-      <form onSubmit={onSend} className={`mt-2 rounded-xl p-2 ${isDark ? "border border-white/10 bg-black/40" : "border border-slate-300 bg-white/90"}`}>
+      <form onSubmit={onSend} className={`mt-1.5 rounded-xl p-1.5 sm:mt-2 sm:p-2 ${isDark ? "border border-white/10 bg-black/40" : "border border-slate-300 bg-white/90"}`}>
         {(image || video) && (
           <div className={`mb-2 flex items-center justify-between rounded-lg px-3 py-2 text-xs ${isDark ? "bg-white/10 text-slate-200" : "bg-slate-100 text-slate-700"}`}>
             <span>{video ? "Video attached" : "Image attached"}</span>
@@ -131,11 +131,11 @@ export default function ChatContainer({
             </button>
           </div>
         )}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
           <button
             type="button"
             onClick={() => imageInputRef.current?.click()}
-            className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl text-base transition ${isDark ? "border border-white/20 text-slate-300 hover:bg-white/10" : "border border-slate-300 text-slate-700 hover:bg-slate-100"}`}
+            className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg text-sm transition sm:h-10 sm:w-10 sm:rounded-xl sm:text-base ${isDark ? "border border-white/20 text-slate-300 hover:bg-white/10" : "border border-slate-300 text-slate-700 hover:bg-slate-100"}`}
             title="Attach image"
           >
             <FiImage />
@@ -182,7 +182,7 @@ export default function ChatContainer({
             }}
           />
           <input
-            className={`h-10 flex-1 rounded-xl px-3 text-sm outline-none transition focus:border-violet-400 ${
+            className={`h-9 flex-1 rounded-lg px-3 text-sm outline-none transition focus:border-violet-400 sm:h-10 sm:rounded-xl ${
               isDark
                 ? "border border-white/20 bg-transparent text-slate-100 placeholder:text-slate-400"
                 : "border border-slate-300 bg-white text-slate-900 placeholder:text-slate-500"
@@ -191,7 +191,7 @@ export default function ChatContainer({
             onChange={(e) => setText(e.target.value)}
             placeholder="Type a message..."
           />
-          <button className="inline-flex h-10 min-w-[88px] items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-500 to-fuchsia-500 px-4 text-sm font-medium text-white transition hover:opacity-95">
+          <button className="inline-flex h-9 min-w-[72px] items-center justify-center gap-1.5 rounded-lg bg-gradient-to-r from-violet-500 to-fuchsia-500 px-3 text-sm font-medium text-white transition hover:opacity-95 sm:h-10 sm:min-w-[88px] sm:gap-2 sm:rounded-xl sm:px-4">
             <FiSend />
             Send
           </button>
