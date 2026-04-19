@@ -30,6 +30,7 @@ async function searchUsers(req, res) {
 async function updateProfile(req, res) {
   const { fullName, bio, profilePic } = req.body;
   const updates = {};
+  let uploadedProfilePic = "";
 
   if (fullName) updates.fullName = fullName;
   if (typeof bio === "string") updates.bio = bio;
@@ -40,6 +41,7 @@ async function updateProfile(req, res) {
         folder: "chat-app/profiles",
       });
       uploadedProfilePic = uploadResult.secure_url;
+      updates.profilePic = uploadedProfilePic;
     }
   } catch (err) {
     return res.status(500).json({

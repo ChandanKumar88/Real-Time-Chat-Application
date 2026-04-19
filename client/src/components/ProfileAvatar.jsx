@@ -1,9 +1,13 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 export default function ProfileAvatar({ src, name = "User", className = "" }) {
   const [hasError, setHasError] = useState(false);
   const normalizedSrc = typeof src === "string" ? src.trim() : "";
   const showImage = normalizedSrc && !hasError;
+
+  useEffect(() => {
+    setHasError(false);
+  }, [normalizedSrc]);
 
   const initial = useMemo(() => {
     const trimmed = (name || "").trim();
