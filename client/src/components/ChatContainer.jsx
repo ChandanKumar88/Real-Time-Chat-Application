@@ -85,16 +85,38 @@ export default function ChatContainer({
                 <div className={`rounded-2xl px-3 py-2 ${isMine ? "bg-violet-600 text-white" : isDark ? "bg-white/10 text-slate-100" : "bg-slate-100 text-slate-800"}`}>
                   {!!m.text && <p className="text-sm">{m.text}</p>}
                   {!!m.image && (
-                    <button type="button" onClick={() => onPreviewMedia?.({ type: "image", src: m.image })} className="mt-2 block">
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => onPreviewMedia?.({ type: "image", src: m.image })}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          onPreviewMedia?.({ type: "image", src: m.image });
+                        }
+                      }}
+                      className="mt-2 block cursor-zoom-in"
+                    >
                       <img src={m.image} className="max-h-64 rounded-xl" />
-                    </button>
+                    </div>
                   )}
                   {!!m.video && (
-                    <button type="button" onClick={() => onPreviewMedia?.({ type: "video", src: m.video })} className="mt-2 block">
-                      <video className="max-h-64 rounded-xl">
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => onPreviewMedia?.({ type: "video", src: m.video })}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          onPreviewMedia?.({ type: "video", src: m.video });
+                        }
+                      }}
+                      className="mt-2 block cursor-zoom-in"
+                    >
+                      <video className="max-h-64 rounded-xl" muted playsInline>
                         <source src={m.video} />
                       </video>
-                    </button>
+                    </div>
                   )}
                   {isMine && !m.pending && (
                     <button
