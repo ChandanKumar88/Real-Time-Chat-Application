@@ -343,7 +343,7 @@ export default function HomePage() {
                 )}
               </div>
               <div
-                className="flex max-h-full max-w-full items-center justify-center overflow-auto rounded-2xl"
+                className="relative flex max-h-full max-w-full items-center justify-center overflow-auto rounded-2xl"
                 onClick={(e) => e.stopPropagation()}
                 onWheel={(e) => {
                   e.preventDefault();
@@ -368,6 +368,22 @@ export default function HomePage() {
                   pinchStateRef.current = null;
                 }}
               >
+                {previewableMedia.length > 1 && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => stepPreview(-1)}
+                      className="absolute left-0 top-0 z-[62] h-full w-1/5 cursor-w-resize bg-transparent"
+                      aria-label="Previous media area"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => stepPreview(1)}
+                      className="absolute right-0 top-0 z-[62] h-full w-1/5 cursor-e-resize bg-transparent"
+                      aria-label="Next media area"
+                    />
+                  </>
+                )}
                 <img
                   src={previewMedia.src}
                   alt="Shared media preview"
@@ -387,9 +403,27 @@ export default function HomePage() {
               </div>
             </>
           ) : (
-            <video controls autoPlay className="max-h-full max-w-full rounded-2xl object-contain shadow-2xl">
-              <source src={previewMedia.src} />
-            </video>
+            <div className="relative flex max-h-full max-w-full items-center justify-center">
+              {previewableMedia.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => stepPreview(-1)}
+                    className="absolute left-0 top-0 z-[62] h-full w-1/5 cursor-w-resize bg-transparent"
+                    aria-label="Previous media area"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => stepPreview(1)}
+                    className="absolute right-0 top-0 z-[62] h-full w-1/5 cursor-e-resize bg-transparent"
+                    aria-label="Next media area"
+                  />
+                </>
+              )}
+              <video controls autoPlay className="max-h-full max-w-full rounded-2xl object-contain shadow-2xl">
+                <source src={previewMedia.src} />
+              </video>
+            </div>
           )}
         </div>
       ) : null}
