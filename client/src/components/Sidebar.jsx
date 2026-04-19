@@ -132,11 +132,15 @@ export default function Sidebar({
                     {u.isOnline ? "Online" : "Offline"}
                   </p>
                 </div>
-                <div className="flex flex-col items-end gap-2">
+                <div className="flex min-w-[42px] flex-col items-end justify-center gap-2">
                   <span className={`h-2.5 w-2.5 rounded-full ${u.isOnline ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.9)]" : "bg-slate-300"}`} />
                   {!!u.unreadCount && (
-                    <span className="min-w-5 rounded-full bg-blue-600 px-1.5 py-0.5 text-center text-[10px] font-bold text-white">
-                      {u.unreadCount}
+                    <span
+                      className={`inline-flex min-h-6 min-w-6 items-center justify-center rounded-full px-1.5 text-[11px] font-bold text-white shadow-lg ${
+                        isDark ? "bg-emerald-500 shadow-emerald-500/40" : "bg-emerald-600 shadow-emerald-500/30"
+                      }`}
+                    >
+                      {u.unreadCount > 99 ? "99+" : u.unreadCount}
                     </span>
                   )}
                 </div>

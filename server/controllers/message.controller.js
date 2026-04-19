@@ -1,3 +1,4 @@
+const mongoose = require("mongoose");
 const Message = require("../models/Message");
 const { cloudinary } = require("../config/cloudinary");
 const { getSocketIdByUserId } = require("../socket/presenceStore");
@@ -5,6 +6,11 @@ const { getSocketIdByUserId } = require("../socket/presenceStore");
 async function getConversation(req, res) {
   const { userId } = req.params;
   const myId = req.user.id;
+
+  if (!userId || !mongoose.isValidObjectId(userId)) {
+    return res.status(400).json({ success: false, message: "Invalid conversation user" });
+  }
+
   const messages = await Message.find({
     $or: [
       { senderId: myId, receiverId: userId },
@@ -17,7 +23,10 @@ async function getConversation(req, res) {
 
 async function sendMessage(req, res) {
   const { userId } = req.params;
-  const { text = "", image = "", video = "" } = req.body;
+  const text = req.body.text?.trim?.() || "";
+  const image = req.body.image || "";
+  const video = req.body.video || "";
+
   if (!text && !image && !video) {
     return res.status(400).json({ success: false, message: "Message cannot be empty" });
   }

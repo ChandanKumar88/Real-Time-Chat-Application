@@ -29,7 +29,9 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!selectedUser) return;
-    loadMessages(selectedUser._id).catch(() => toast.error("Failed to load messages"));
+    loadMessages(selectedUser._id).catch((error) => {
+      toast.error(error?.response?.data?.message || "Failed to load messages");
+    });
   }, [selectedUser]);
 
   useEffect(() => {
@@ -134,12 +136,16 @@ export default function HomePage() {
           onSend={async (e) => {
             e.preventDefault();
             if (!selectedUser || (!text.trim() && !image && !video)) return;
+            const payload = { text: text.trim(), image, video };
+            setText("");
+            setImage("");
+            setVideo("");
             try {
-              await sendMessage(selectedUser._id, { text, image, video });
-              setText("");
-              setImage("");
-              setVideo("");
+              await sendMessage(selectedUser._id, payload);
             } catch (error) {
+              setText(payload.text);
+              setImage(payload.image);
+              setVideo(payload.video);
               toast.error(error?.response?.data?.message || "Failed to send media");
             }
           }}

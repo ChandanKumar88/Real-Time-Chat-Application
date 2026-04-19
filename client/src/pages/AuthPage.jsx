@@ -29,7 +29,10 @@ export default function AuthPage({ mode = "login" }) {
         navigate("/");
       }
     } catch (error) {
-      toast.error(error.response?.data?.message || "Authentication failed");
+      const message =
+        error.response?.data?.message ||
+        (error.request ? "Backend server se connection nahi ho pa raha" : "Authentication failed");
+      toast.error(message);
     }
   }
 

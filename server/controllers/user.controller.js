@@ -34,11 +34,18 @@ async function updateProfile(req, res) {
   if (fullName) updates.fullName = fullName;
   if (typeof bio === "string") updates.bio = bio;
 
-  if (profilePic) {
-    const upload = await cloudinary.uploader.upload(profilePic, {
-      folder: "chat-app/profiles",
+  try {
+    if (profilePic) {
+      const uploadResult = await cloudinary.uploader.upload(profilePic, {
+        folder: "chat-app/profiles",
+      });
+      uploadedProfilePic = uploadResult.secure_url;
+    }
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: "Image upload failed",
     });
-    updates.profilePic = upload.secure_url;
   }
 
   const user = await User.findByIdAndUpdate(req.user.id, updates, { new: true }).select("-password");

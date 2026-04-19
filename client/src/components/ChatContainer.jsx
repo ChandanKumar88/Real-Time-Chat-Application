@@ -1,7 +1,11 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
+import toast from "react-hot-toast";
 import { FiImage, FiSend, FiTrash2, FiX } from "react-icons/fi";
 import logoIcon from "../assets/logo_icon.svg";
 import ProfileAvatar from "./ProfileAvatar";
+import { processImageFile } from "../utils/image";
+
+const MAX_VIDEO_SIZE_MB = 12;
 
 export default function ChatContainer({
   user,
@@ -18,7 +22,12 @@ export default function ChatContainer({
   theme = "dark",
 }) {
   const imageInputRef = useRef(null);
+  const messagesEndRef = useRef(null);
   const isDark = theme === "dark";
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [messages, selectedUser]);
 
   function formatMessageTime(value) {
     if (!value) return "";
@@ -39,12 +48,12 @@ export default function ChatContainer({
   }
 
   return (
-    <main className={`grid h-full min-h-0 grid-rows-[auto,minmax(0,1fr),auto] overflow-hidden rounded-2xl p-4 backdrop-blur-sm ${isDark ? "border border-white/10 bg-black/15" : "border border-slate-300 bg-white/70"}`}>
-      <header className={`mb-3 flex items-center justify-between rounded-xl px-4 py-3 ${isDark ? "border border-white/10 bg-white/5" : "border border-slate-200 bg-white/80"}`}>
+    <main className={`grid h-full min-h-0 grid-rows-[auto,minmax(0,1fr),auto] overflow-hidden rounded-2xl p-3 backdrop-blur-sm ${isDark ? "border border-white/10 bg-black/15" : "border border-slate-300 bg-white/70"}`}>
+      <header className={`mb-2 flex h-[64px] items-center justify-between rounded-xl px-3 ${isDark ? "border border-white/10 bg-white/5" : "border border-slate-200 bg-white/80"}`}>
         <div className="flex items-center gap-3">
-          <ProfileAvatar src={selectedUser.profilePic} name={selectedUser.fullName} className="h-10 w-10 rounded-full object-cover" />
+          <ProfileAvatar src={selectedUser.profilePic} name={selectedUser.fullName} className="h-9 w-9 rounded-full object-cover" />
           <div>
-            <p className={`font-semibold ${isDark ? "text-slate-100" : "text-slate-900"}`}>{selectedUser.fullName}</p>
+            <p className={`text-sm font-semibold ${isDark ? "text-slate-100" : "text-slate-900"}`}>{selectedUser.fullName}</p>
             <p className={`text-xs ${isDark ? "text-slate-400" : "text-slate-500"}`}>{selectedUser.isOnline ? "Online" : "Offline"}</p>
           </div>
         </div>
@@ -87,9 +96,10 @@ export default function ChatContainer({
             </div>
           );
         })}
+        <div ref={messagesEndRef} />
       </div>
 
-      <form onSubmit={onSend} className={`mt-3 rounded-xl p-2 ${isDark ? "border border-white/10 bg-black/40" : "border border-slate-300 bg-white/90"}`}>
+      <form onSubmit={onSend} className={`mt-2 rounded-xl p-2 ${isDark ? "border border-white/10 bg-black/40" : "border border-slate-300 bg-white/90"}`}>
         {(image || video) && (
           <div className={`mb-2 flex items-center justify-between rounded-lg px-3 py-2 text-xs ${isDark ? "bg-white/10 text-slate-200" : "bg-slate-100 text-slate-700"}`}>
             <span>{video ? "Video attached" : "Image attached"}</span>
@@ -110,7 +120,7 @@ export default function ChatContainer({
           <button
             type="button"
             onClick={() => imageInputRef.current?.click()}
-            className={`rounded-xl px-3 py-2 text-lg transition ${isDark ? "border border-white/20 text-slate-300 hover:bg-white/10" : "border border-slate-300 text-slate-700 hover:bg-slate-100"}`}
+            className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl text-base transition ${isDark ? "border border-white/20 text-slate-300 hover:bg-white/10" : "border border-slate-300 text-slate-700 hover:bg-slate-100"}`}
             title="Attach image"
           >
             <FiImage />
@@ -120,24 +130,44 @@ export default function ChatContainer({
             type="file"
             accept="image/*,video/*"
             className="hidden"
-            onChange={(e) => {
+            onChange={async (e) => {
               const file = e.target.files?.[0];
               if (!file) return;
-              const reader = new FileReader();
-              reader.onloadend = () => {
+              try {
                 if (file.type.startsWith("video/")) {
-                  setVideo(reader.result);
-                  setImage("");
-                } else {
-                  setImage(reader.result);
-                  setVideo("");
+                  const maxVideoBytes = MAX_VIDEO_SIZE_MB * 1024 * 1024;
+                  if (file.size > maxVideoBytes) {
+                    toast.error(`Video ${MAX_VIDEO_SIZE_MB}MB se chhota rakho for faster upload`);
+                    e.target.value = "";
+                    return;
+                  }
+
+                  const reader = new FileReader();
+                  reader.onloadend = () => {
+                    setVideo(reader.result);
+                    setImage("");
+                  };
+                  reader.onerror = () => toast.error("Video read nahi ho pa raha");
+                  reader.readAsDataURL(file);
+                  return;
                 }
-              };
-              reader.readAsDataURL(file);
+
+                const compressedImage = await processImageFile(file, {
+                  maxWidth: 1280,
+                  maxHeight: 1280,
+                  quality: 0.72,
+                });
+                setImage(compressedImage);
+                setVideo("");
+              } catch (_error) {
+                toast.error("Media process nahi ho pa raha");
+              } finally {
+                e.target.value = "";
+              }
             }}
           />
           <input
-            className={`flex-1 rounded-xl px-3 py-2 text-sm outline-none transition focus:border-violet-400 ${
+            className={`h-10 flex-1 rounded-xl px-3 text-sm outline-none transition focus:border-violet-400 ${
               isDark
                 ? "border border-white/20 bg-transparent text-slate-100 placeholder:text-slate-400"
                 : "border border-slate-300 bg-white text-slate-900 placeholder:text-slate-500"
@@ -146,7 +176,7 @@ export default function ChatContainer({
             onChange={(e) => setText(e.target.value)}
             placeholder="Type a message..."
           />
-          <button className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-violet-500 to-fuchsia-500 px-4 py-2 text-sm font-medium text-white transition hover:opacity-95">
+          <button className="inline-flex h-10 min-w-[88px] items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-500 to-fuchsia-500 px-4 text-sm font-medium text-white transition hover:opacity-95">
             <FiSend />
             Send
           </button>

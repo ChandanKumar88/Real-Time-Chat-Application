@@ -2,10 +2,10 @@
   "name": "server",
   "version": "1.0.0",
   "description": "Realtime chat backend with auth and socket.io",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
-    "dev": "nodemon index.js",
-    "start": "node index.js"
+    "dev": "nodemon server.js",
+    "start": "node server.js"
   },
   "keywords": [],
   "author": "",

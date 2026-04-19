@@ -3,17 +3,18 @@ const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
 const { Server } = require("socket.io");
-const connectDB = require("./config/db");
-const { connectCloudinary } = require("./config/cloudinary");
-const authRoutes = require("./routes/auth.routes");
-const userRoutes = require("./routes/user.routes");
-const messageRoutes = require("./routes/message.routes");
-const { registerSocketHandlers } = require("./socket/socketHandlers");
+const connectDB = require("./config/db.js");
+const { connectCloudinary } = require("./config/cloudinary.js");
+const authRoutes = require("./routes/auth.routes.js");
+const userRoutes = require("./routes/user.routes.js");
+const messageRoutes = require("./routes/message.routes.js");
+const { registerSocketHandlers } = require("./socket/socketHandlers.js");
 
 dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
+
 
 const io = new Server(server, {
   cors: {
@@ -50,6 +51,7 @@ app.use((err, _req, res, _next) => {
 });
 
 registerSocketHandlers(io);
+
 
 const PORT = process.env.PORT || 5000;
 

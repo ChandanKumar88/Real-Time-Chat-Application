@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { api } from "../services/api";
 import { useAuth } from "./AuthContext";
@@ -12,6 +12,11 @@ export function ChatProvider({ children }) {
   const [selectedUser, setSelectedUser] = useState(null);
   const [messages, setMessages] = useState([]);
   const [socket, setSocket] = useState(null);
+  const selectedUserRef = useRef(null);
+
+  useEffect(() => {
+    selectedUserRef.current = selectedUser;
+  }, [selectedUser]);
 
   useEffect(() => {
     if (!user) return;
@@ -21,7 +26,11 @@ export function ChatProvider({ children }) {
       setUsers((prev) => prev.map((u) => ({ ...u, isOnline: onlineIds.includes(u._id) })));
     });
     s.on("message:new", (message) => {
-      if (selectedUser && message.senderId === selectedUser._id) setMessages((prev) => [...prev, message]);
+      if (selectedUserRef.current && message.senderId === selectedUserRef.current._id) {
+        setMessages((prev) => [...prev, message]);
+        setUsers((prev) => prev.map((u) => (u._id === message.senderId ? { ...u, unreadCount: 0 } : u)));
+        return;
+      }
       setUsers((prev) =>
         prev.map((u) => (u._id === message.senderId ? { ...u, unreadCount: (u.unreadCount || 0) + 1 } : u))
       );
@@ -34,7 +43,7 @@ export function ChatProvider({ children }) {
     });
     setSocket(s);
     return () => s.disconnect();
-  }, [user, selectedUser]);
+  }, [user]);
 
   async function loadUsers() {
     const { data } = await api.get("/users");
@@ -42,8 +51,15 @@ export function ChatProvider({ children }) {
   }
 
   async function loadMessages(userId) {
+    if (!userId) {
+      setMessages([]);
+      return [];
+    }
+
     const { data } = await api.get(`/messages/${userId}`);
     setMessages(data.data);
+    setUsers((prev) => prev.map((u) => (u._id === userId ? { ...u, unreadCount: 0 } : u)));
+    return data.data;
   }
 
   async function sendMessage(targetUserId, payload) {
