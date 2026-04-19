@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
-import { FiMenu } from "react-icons/fi";
+import { FiMenu, FiX } from "react-icons/fi";
 import { useAuth } from "../context/AuthContext";
 import { useChat } from "../context/ChatContext";
 import Sidebar from "../components/Sidebar";
@@ -18,6 +18,7 @@ export default function HomePage() {
   const [theme, setTheme] = useState(() => localStorage.getItem("chat_theme") || "light");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isMediaOpen, setIsMediaOpen] = useState(false);
+  const [previewMedia, setPreviewMedia] = useState(null);
 
   useEffect(() => {
     loadUsers().catch(() => toast.error("Failed to load users"));
@@ -86,6 +87,14 @@ export default function HomePage() {
           aria-label="Close media backdrop"
           onClick={() => setIsMediaOpen(false)}
           className="fixed inset-0 z-30 bg-slate-900/55 xl:hidden"
+        />
+      )}
+
+      {previewMedia && (
+        <button
+          aria-label="Close media preview"
+          onClick={() => setPreviewMedia(null)}
+          className="fixed inset-0 z-50 bg-black/85"
         />
       )}
 
@@ -168,6 +177,7 @@ export default function HomePage() {
             selectedUser={selectedUser}
             messages={messages}
             currentUserId={user?._id}
+            onPreviewMedia={setPreviewMedia}
             onDeleteMessage={async (messageId) => {
               const confirmed = window.confirm("Delete this media?");
               if (!confirmed) return;
@@ -187,6 +197,7 @@ export default function HomePage() {
           selectedUser={selectedUser}
           messages={messages}
           currentUserId={user?._id}
+          onPreviewMedia={setPreviewMedia}
           onDeleteMessage={async (messageId) => {
             const confirmed = window.confirm("Delete this media?");
             if (!confirmed) return;
@@ -200,6 +211,30 @@ export default function HomePage() {
           mobile
           onCloseMobile={() => setIsMediaOpen(false)}
         />
+      ) : null}
+
+      {previewMedia ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <button
+            type="button"
+            onClick={() => setPreviewMedia(null)}
+            className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur hover:bg-white/20"
+            aria-label="Close preview"
+          >
+            <FiX />
+          </button>
+          {previewMedia.type === "image" ? (
+            <img
+              src={previewMedia.src}
+              alt="Shared media preview"
+              className="max-h-full max-w-full rounded-2xl object-contain shadow-2xl"
+            />
+          ) : (
+            <video controls autoPlay className="max-h-full max-w-full rounded-2xl object-contain shadow-2xl">
+              <source src={previewMedia.src} />
+            </video>
+          )}
+        </div>
       ) : null}
       </div>
       </div>

@@ -6,6 +6,7 @@ export default function RightSidebar({
   messages,
   currentUserId,
   onDeleteMessage,
+  onPreviewMedia,
   theme = "dark",
   mobile = false,
   onCloseMobile,
@@ -48,7 +49,13 @@ export default function RightSidebar({
               .map((m) =>
                 m.image ? (
                   <div key={m._id} className="group relative">
-                    <img src={m.image} className="h-24 w-full rounded-xl object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => onPreviewMedia?.({ type: "image", src: m.image })}
+                      className="block w-full"
+                    >
+                      <img src={m.image} className="h-24 w-full rounded-xl object-cover" />
+                    </button>
                     {m.senderId === currentUserId && (
                       <button
                         type="button"
@@ -62,9 +69,15 @@ export default function RightSidebar({
                   </div>
                 ) : (
                   <div key={m._id} className="group relative">
-                    <video controls className="h-24 w-full rounded-xl object-cover">
-                      <source src={m.video} />
-                    </video>
+                    <button
+                      type="button"
+                      onClick={() => onPreviewMedia?.({ type: "video", src: m.video })}
+                      className="block w-full"
+                    >
+                      <video className="h-24 w-full rounded-xl object-cover">
+                        <source src={m.video} />
+                      </video>
+                    </button>
                     {m.senderId === currentUserId && (
                       <button
                         type="button"
