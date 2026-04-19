@@ -466,29 +466,6 @@ export default function HomePage() {
             </>
           ) : (
             <div className="relative flex max-h-[88vh] max-w-[min(92vw,1100px)] flex-col items-center justify-center gap-4">
-              <div className="z-[61] flex flex-wrap items-center justify-center gap-2 rounded-full bg-white/10 px-3 py-2 text-white backdrop-blur">
-                <button
-                  type="button"
-                  onClick={handleDownloadPreview}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
-                  aria-label="Download media"
-                >
-                  <FiDownload />
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSharePreview}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
-                  aria-label="Share media"
-                >
-                  <FiShare2 />
-                </button>
-                {previewableMedia.length > 1 && (
-                  <span className="min-w-14 text-center text-sm font-medium">
-                    {previewableMedia.findIndex((item) => item.id === previewMedia.id) + 1}/{previewableMedia.length}
-                  </span>
-                )}
-              </div>
               <div
                 className={`flex max-h-[78vh] max-w-full items-center justify-center overflow-hidden bg-black/80 shadow-2xl backdrop-blur-sm ${
                   isPortraitPreviewVideo
@@ -513,6 +490,29 @@ export default function HomePage() {
                 >
                   <source src={previewMedia.src} />
                 </video>
+              </div>
+              <div className="z-[61] flex flex-wrap items-center justify-center gap-2 rounded-full bg-white/10 px-3 py-2 text-white backdrop-blur">
+                <button
+                  type="button"
+                  onClick={handleDownloadPreview}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
+                  aria-label="Download media"
+                >
+                  <FiDownload />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSharePreview}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
+                  aria-label="Share media"
+                >
+                  <FiShare2 />
+                </button>
+                {previewableMedia.length > 1 && (
+                  <span className="min-w-14 text-center text-sm font-medium">
+                    {previewableMedia.findIndex((item) => item.id === previewMedia.id) + 1}/{previewableMedia.length}
+                  </span>
+                )}
               </div>
             </div>
           )}
