@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { FiGrid, FiImage, FiSend, FiTrash2, FiX } from "react-icons/fi";
 import logoIcon from "../assets/logo_icon.svg";
@@ -26,6 +26,7 @@ export default function ChatContainer({
 }) {
   const imageInputRef = useRef(null);
   const messagesContainerRef = useRef(null);
+  const [mediaError, setMediaError] = useState("");
   const isDark = theme === "dark";
 
   useLayoutEffect(() => {
@@ -151,6 +152,7 @@ export default function ChatContainer({
             <button
               type="button"
               onClick={() => {
+                setMediaError("");
                 setImage("");
                 setVideo("");
               }}
@@ -160,6 +162,11 @@ export default function ChatContainer({
               Remove
             </button>
           </div>
+        )}
+        {!!mediaError && (
+          <p className={`mb-2 px-1 text-xs ${isDark ? "text-rose-300" : "text-rose-600"}`}>
+            {mediaError}
+          </p>
         )}
         <div className="flex items-center gap-1.5 sm:gap-2">
           <button
@@ -178,25 +185,32 @@ export default function ChatContainer({
             onChange={async (e) => {
               const file = e.target.files?.[0];
               if (!file) return;
+              setMediaError("");
               try {
                 if (file.type.startsWith("video/")) {
                   const maxVideoBytes = MAX_VIDEO_SIZE_MB * 1024 * 1024;
                   if (file.size > maxVideoBytes) {
-                    toast.error(
-                      IS_VERCEL_HOSTED
-                        ? `Vercel deploy par video ${MAX_VIDEO_SIZE_MB}MB ya usse chhota rakho, warna upload fail ho sakta hai`
-                        : `Video ${MAX_VIDEO_SIZE_MB}MB se chhota rakho for faster upload`
-                    );
+                    const message = IS_VERCEL_HOSTED
+                      ? `Vercel deploy par video ${MAX_VIDEO_SIZE_MB}MB ya usse chhota rakho, warna upload fail ho sakta hai`
+                      : `Video ${MAX_VIDEO_SIZE_MB}MB se chhota rakho for faster upload`;
+                    setMediaError(message);
+                    toast.error(message);
+                    setImage("");
+                    setVideo("");
                     e.target.value = "";
                     return;
                   }
 
                   const reader = new FileReader();
                   reader.onloadend = () => {
+                    setMediaError("");
                     setVideo(reader.result);
                     setImage("");
                   };
-                  reader.onerror = () => toast.error("Video read nahi ho pa raha");
+                  reader.onerror = () => {
+                    setMediaError("Video read nahi ho pa raha");
+                    toast.error("Video read nahi ho pa raha");
+                  };
                   reader.readAsDataURL(file);
                   return;
                 }
@@ -206,9 +220,11 @@ export default function ChatContainer({
                   maxHeight: 1280,
                   quality: 0.72,
                 });
+                setMediaError("");
                 setImage(compressedImage);
                 setVideo("");
               } catch (_error) {
+                setMediaError("Media process nahi ho pa raha");
                 toast.error("Media process nahi ho pa raha");
               } finally {
                 e.target.value = "";
