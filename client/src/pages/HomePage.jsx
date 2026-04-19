@@ -461,8 +461,8 @@ export default function HomePage() {
               </div>
             </>
           ) : (
-            <div className="relative flex max-h-full max-w-full items-center justify-center">
-              <div className="absolute bottom-4 left-1/2 z-[61] flex -translate-x-1/2 items-center gap-2 rounded-full bg-white/10 px-3 py-2 text-white backdrop-blur">
+            <div className="relative flex max-h-[88vh] max-w-[min(92vw,960px)] flex-col items-center justify-center gap-4">
+              <div className="z-[61] flex flex-wrap items-center justify-center gap-2 rounded-full bg-white/10 px-3 py-2 text-white backdrop-blur">
                 <button
                   type="button"
                   onClick={handleDownloadPreview}
@@ -485,25 +485,16 @@ export default function HomePage() {
                   </span>
                 )}
               </div>
-              {previewableMedia.length > 1 && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => stepPreview(-1)}
-                    className="absolute left-0 top-0 z-[62] h-full w-1/5 cursor-w-resize bg-transparent"
-                    aria-label="Previous media area"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => stepPreview(1)}
-                    className="absolute right-0 top-0 z-[62] h-full w-1/5 cursor-e-resize bg-transparent"
-                    aria-label="Next media area"
-                  />
-                </>
-              )}
-              <video controls autoPlay className="max-h-full max-w-full rounded-2xl object-contain shadow-2xl">
-                <source src={previewMedia.src} />
-              </video>
+              <div className="flex max-h-[78vh] max-w-full items-center justify-center overflow-hidden rounded-[28px] bg-black/80 p-2 shadow-2xl backdrop-blur-sm sm:p-3">
+                <video
+                  controls
+                  autoPlay
+                  playsInline
+                  className="block max-h-[72vh] max-w-[min(88vw,920px)] rounded-[22px] bg-black object-contain"
+                >
+                  <source src={previewMedia.src} />
+                </video>
+              </div>
             </div>
           )}
         </div>
