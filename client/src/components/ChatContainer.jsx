@@ -20,6 +20,7 @@ export default function ChatContainer({
   onSend,
   onDeleteMessage,
   onOpenMedia,
+  onPreviewMedia,
   theme = "dark",
 }) {
   const imageInputRef = useRef(null);
@@ -83,11 +84,17 @@ export default function ChatContainer({
               <div className={`max-w-[88%] sm:max-w-[82%] ${isMine ? "items-end" : "items-start"} flex flex-col`}>
                 <div className={`rounded-2xl px-3 py-2 ${isMine ? "bg-violet-600 text-white" : isDark ? "bg-white/10 text-slate-100" : "bg-slate-100 text-slate-800"}`}>
                   {!!m.text && <p className="text-sm">{m.text}</p>}
-                  {!!m.image && <img src={m.image} className="mt-2 max-h-64 rounded-xl" />}
+                  {!!m.image && (
+                    <button type="button" onClick={() => onPreviewMedia?.({ type: "image", src: m.image })} className="mt-2 block">
+                      <img src={m.image} className="max-h-64 rounded-xl" />
+                    </button>
+                  )}
                   {!!m.video && (
-                    <video controls className="mt-2 max-h-64 rounded-xl">
-                      <source src={m.video} />
-                    </video>
+                    <button type="button" onClick={() => onPreviewMedia?.({ type: "video", src: m.video })} className="mt-2 block">
+                      <video className="max-h-64 rounded-xl">
+                        <source src={m.video} />
+                      </video>
+                    </button>
                   )}
                   {isMine && !m.pending && (
                     <button

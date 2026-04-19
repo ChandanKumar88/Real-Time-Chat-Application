@@ -143,6 +143,7 @@ export default function HomePage() {
           video={video}
           theme={theme}
           onOpenMedia={() => setIsMediaOpen(true)}
+          onPreviewMedia={setPreviewMedia}
           onDeleteMessage={async (messageId) => {
             const confirmed = window.confirm("Delete this message?");
             if (!confirmed) return;
