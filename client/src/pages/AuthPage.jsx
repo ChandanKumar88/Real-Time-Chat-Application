@@ -71,7 +71,7 @@ export default function AuthPage({ mode = "login" }) {
                   Upload photo
                   <input
                     type="file"
-                    accept="image/*"
+                    accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
                     className="hidden"
                     onChange={async (e) => {
                       const file = e.target.files?.[0];

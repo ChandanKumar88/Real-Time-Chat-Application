@@ -62,7 +62,7 @@ export default function ProfilePage() {
               <input
                 className="hidden"
                 type="file"
-                accept="image/*"
+                accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
                 onChange={async (e) => {
                   const file = e.target.files[0];
                   if (!file) return;
