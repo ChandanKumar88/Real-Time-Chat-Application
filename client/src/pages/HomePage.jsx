@@ -280,6 +280,7 @@ export default function HomePage() {
               </div>
               <div
                 className="flex max-h-full max-w-full items-center justify-center overflow-auto rounded-2xl"
+                onClick={(e) => e.stopPropagation()}
                 onWheel={(e) => {
                   e.preventDefault();
                   const delta = e.deltaY < 0 ? 0.2 : -0.2;
@@ -306,7 +307,17 @@ export default function HomePage() {
                 <img
                   src={previewMedia.src}
                   alt="Shared media preview"
-                  className="max-h-full max-w-full rounded-2xl object-contain shadow-2xl transition-transform duration-150"
+                  className={`max-h-full max-w-full rounded-2xl object-contain shadow-2xl transition-transform duration-150 ${
+                    previewZoom > 1 ? "cursor-zoom-out" : "cursor-zoom-in"
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setPreviewZoom((prev) => (prev > 1 ? 1 : 2));
+                  }}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    setPreviewZoom((prev) => clampZoom(prev >= 2 ? prev + 0.5 : 2));
+                  }}
                   style={{ transform: `scale(${previewZoom})`, transformOrigin: "center center" }}
                 />
               </div>
