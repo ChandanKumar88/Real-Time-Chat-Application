@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 import toast from "react-hot-toast";
 import { FiGrid, FiImage, FiSend, FiTrash2, FiX } from "react-icons/fi";
 import logoIcon from "../assets/logo_icon.svg";
@@ -23,11 +23,13 @@ export default function ChatContainer({
   theme = "dark",
 }) {
   const imageInputRef = useRef(null);
-  const messagesEndRef = useRef(null);
+  const messagesContainerRef = useRef(null);
   const isDark = theme === "dark";
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  useLayoutEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    container.scrollTop = container.scrollHeight;
   }, [messages, selectedUser]);
 
   function formatMessageTime(value) {
@@ -68,7 +70,10 @@ export default function ChatContainer({
         </button>
       </header>
 
-      <div className={`chat-scroll min-h-0 overflow-y-auto rounded-xl ${isDark ? "bg-black/20" : "bg-white/60"}`}>
+      <div
+        ref={messagesContainerRef}
+        className={`chat-scroll min-h-0 overflow-y-auto rounded-xl ${isDark ? "bg-black/20" : "bg-white/60"}`}
+      >
         <div className="space-y-2 p-2 sm:p-3">
         {messages.map((m) => {
           const isMine = m.senderId === user._id;
@@ -106,7 +111,6 @@ export default function ChatContainer({
             </div>
           );
         })}
-        <div ref={messagesEndRef} />
         </div>
       </div>
 
