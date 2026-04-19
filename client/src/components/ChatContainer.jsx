@@ -54,19 +54,19 @@ export default function ChatContainer({
   }
 
   return (
-    <main className={`grid h-full min-h-0 grid-rows-[58px,minmax(0,1fr),auto] overflow-hidden rounded-2xl p-1.5 backdrop-blur-sm sm:grid-rows-[64px,minmax(0,1fr),auto] sm:p-3 ${isDark ? "border border-white/10 bg-black/15" : "border border-slate-300 bg-white/70"}`}>
-      <header className={`flex h-[58px] items-center justify-between rounded-xl px-3 sm:h-[64px] ${isDark ? "border border-white/10 bg-white/5" : "border border-slate-200 bg-white/80"}`}>
-        <div className="flex items-center gap-3">
-          <ProfileAvatar src={selectedUser.profilePic} name={selectedUser.fullName} className="h-8 w-8 rounded-full object-cover sm:h-9 sm:w-9" />
-          <div>
-            <p className={`text-sm font-semibold ${isDark ? "text-slate-100" : "text-slate-900"}`}>{selectedUser.fullName}</p>
+    <main className={`grid h-full min-h-0 grid-rows-[54px,minmax(0,1fr),auto] overflow-hidden rounded-2xl p-1 backdrop-blur-sm sm:grid-rows-[64px,minmax(0,1fr),auto] sm:p-3 ${isDark ? "border border-white/10 bg-black/15" : "border border-slate-300 bg-white/70"}`}>
+      <header className={`flex h-[54px] items-center justify-between rounded-xl px-2.5 sm:h-[64px] sm:px-3 ${isDark ? "border border-white/10 bg-white/5" : "border border-slate-200 bg-white/80"}`}>
+        <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
+          <ProfileAvatar src={selectedUser.profilePic} name={selectedUser.fullName} className="h-8 w-8 shrink-0 rounded-full object-cover sm:h-9 sm:w-9" />
+          <div className="min-w-0">
+            <p className={`truncate text-sm font-semibold ${isDark ? "text-slate-100" : "text-slate-900"}`}>{selectedUser.fullName}</p>
             <p className={`text-xs ${isDark ? "text-slate-400" : "text-slate-500"}`}>{selectedUser.isOnline ? "Online" : "Offline"}</p>
           </div>
         </div>
         <button
           type="button"
           onClick={onOpenMedia}
-          className={`inline-flex h-9 w-9 items-center justify-center rounded-lg xl:hidden ${isDark ? "border border-white/10 bg-white/5 text-slate-300" : "border border-slate-200 bg-white text-slate-700"}`}
+          className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg xl:hidden sm:h-9 sm:w-9 ${isDark ? "border border-white/10 bg-white/5 text-slate-300" : "border border-slate-200 bg-white text-slate-700"}`}
           title="Open media"
         >
           <FiGrid />
@@ -83,9 +83,9 @@ export default function ChatContainer({
           const avatarSrc = isMine ? user?.profilePic || "https://placehold.co/28x28?text=U" : selectedUser?.profilePic || "https://placehold.co/28x28?text=U";
           return (
             <div key={m._id} className={`flex ${isMine ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[88%] sm:max-w-[82%] ${isMine ? "items-end" : "items-start"} flex flex-col`}>
-                <div className={`rounded-2xl px-3 py-2 ${isMine ? "bg-violet-600 text-white" : isDark ? "bg-white/10 text-slate-100" : "bg-slate-100 text-slate-800"}`}>
-                  {!!m.text && <p className="text-sm">{m.text}</p>}
+              <div className={`flex max-w-[92%] flex-col sm:max-w-[82%] ${isMine ? "items-end" : "items-start"}`}>
+                <div className={`max-w-full rounded-2xl px-2.5 py-2 sm:px-3 ${isMine ? "bg-violet-600 text-white" : isDark ? "bg-white/10 text-slate-100" : "bg-slate-100 text-slate-800"}`}>
+                  {!!m.text && <p className="break-words text-sm">{m.text}</p>}
                   {!!m.image && (
                     <div
                       role="button"
@@ -97,9 +97,9 @@ export default function ChatContainer({
                           onPreviewMedia?.({ id: m._id, type: "image", src: m.image });
                         }
                       }}
-                      className="mt-2 block cursor-zoom-in"
+                      className="mt-2 block max-w-full cursor-zoom-in"
                     >
-                      <img src={m.image} className="max-h-64 rounded-xl" />
+                      <img src={m.image} className="block max-h-56 w-full max-w-[min(58vw,240px)] rounded-xl object-cover sm:max-h-64 sm:max-w-full" />
                     </div>
                   )}
                   {!!m.video && (
@@ -113,9 +113,9 @@ export default function ChatContainer({
                           onPreviewMedia?.({ id: m._id, type: "video", src: m.video });
                         }
                       }}
-                      className="mt-2 block cursor-zoom-in"
+                      className="mt-2 block max-w-full cursor-zoom-in"
                     >
-                      <video className="max-h-64 rounded-xl" muted playsInline>
+                      <video className="block max-h-56 w-full max-w-[min(58vw,240px)] rounded-xl object-cover sm:max-h-64 sm:max-w-full" muted playsInline>
                         <source src={m.video} />
                       </video>
                     </div>
@@ -145,7 +145,7 @@ export default function ChatContainer({
         </div>
       </div>
 
-      <form onSubmit={onSend} className={`mt-1.5 rounded-xl p-1.5 sm:mt-2 sm:p-2 ${isDark ? "border border-white/10 bg-black/40" : "border border-slate-300 bg-white/90"}`}>
+      <form onSubmit={onSend} className={`mt-1 rounded-xl p-1.5 sm:mt-2 sm:p-2 ${isDark ? "border border-white/10 bg-black/40" : "border border-slate-300 bg-white/90"}`}>
         {(image || video) && (
           <div className={`mb-2 flex items-center justify-between rounded-lg px-3 py-2 text-xs ${isDark ? "bg-white/10 text-slate-200" : "bg-slate-100 text-slate-700"}`}>
             <span>{video ? "Video attached" : "Image attached"}</span>
@@ -172,7 +172,7 @@ export default function ChatContainer({
           <button
             type="button"
             onClick={() => imageInputRef.current?.click()}
-            className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg text-sm transition sm:h-10 sm:w-10 sm:rounded-xl sm:text-base ${isDark ? "border border-white/20 text-slate-300 hover:bg-white/10" : "border border-slate-300 text-slate-700 hover:bg-slate-100"}`}
+            className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg text-sm transition sm:h-10 sm:w-10 sm:rounded-xl sm:text-base ${isDark ? "border border-white/20 text-slate-300 hover:bg-white/10" : "border border-slate-300 text-slate-700 hover:bg-slate-100"}`}
             title="Attach image"
           >
             <FiImage />
@@ -232,7 +232,7 @@ export default function ChatContainer({
             }}
           />
           <input
-            className={`h-9 flex-1 rounded-lg px-3 text-sm outline-none transition focus:border-violet-400 sm:h-10 sm:rounded-xl ${
+            className={`h-8 min-w-0 flex-1 rounded-lg px-3 text-sm outline-none transition focus:border-violet-400 sm:h-10 sm:rounded-xl ${
               isDark
                 ? "border border-white/20 bg-transparent text-slate-100 placeholder:text-slate-400"
                 : "border border-slate-300 bg-white text-slate-900 placeholder:text-slate-500"
@@ -241,9 +241,9 @@ export default function ChatContainer({
             onChange={(e) => setText(e.target.value)}
             placeholder="Type a message..."
           />
-          <button className="inline-flex h-9 min-w-[72px] items-center justify-center gap-1.5 rounded-lg bg-gradient-to-r from-violet-500 to-fuchsia-500 px-3 text-sm font-medium text-white transition hover:opacity-95 sm:h-10 sm:min-w-[88px] sm:gap-2 sm:rounded-xl sm:px-4">
+          <button className="inline-flex h-8 w-10 shrink-0 items-center justify-center rounded-lg bg-gradient-to-r from-violet-500 to-fuchsia-500 text-sm font-medium text-white transition hover:opacity-95 sm:h-10 sm:min-w-[88px] sm:gap-2 sm:rounded-xl sm:px-4">
             <FiSend />
-            Send
+            <span className="hidden sm:inline">Send</span>
           </button>
         </div>
       </form>
