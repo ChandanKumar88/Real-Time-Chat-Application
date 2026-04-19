@@ -5,6 +5,8 @@ import { useAuth } from "./AuthContext";
 
 const ChatContext = createContext(null);
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || "http://localhost:5000";
+const USERS_POLL_INTERVAL_MS = 8000;
+const MESSAGES_POLL_INTERVAL_MS = 3000;
 
 export function ChatProvider({ children }) {
   const { user } = useAuth();
@@ -20,8 +22,15 @@ export function ChatProvider({ children }) {
 
   useEffect(() => {
     if (!user) return;
-    const s = io(SOCKET_URL, { transports: ["websocket"] });
-    s.emit("user:online", user._id);
+    const s = io(SOCKET_URL, {
+      transports: ["websocket", "polling"],
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+    });
+    s.on("connect", () => {
+      s.emit("user:online", user._id);
+    });
     s.on("presence:update", (onlineIds) => {
       setUsers((prev) => prev.map((u) => ({ ...u, isOnline: onlineIds.includes(u._id) })));
     });
@@ -44,6 +53,41 @@ export function ChatProvider({ children }) {
     setSocket(s);
     return () => s.disconnect();
   }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const intervalId = window.setInterval(() => {
+      loadUsers().catch(() => null);
+    }, USERS_POLL_INTERVAL_MS);
+
+    return () => window.clearInterval(intervalId);
+  }, [user]);
+
+  useEffect(() => {
+    if (!user || !selectedUser) return;
+
+    const intervalId = window.setInterval(async () => {
+      try {
+        const activeUserId = selectedUserRef.current?._id;
+        if (!activeUserId) return;
+
+        const { data } = await api.get(`/messages/${activeUserId}`);
+        setMessages((prev) => {
+          const nextMessages = data.data || [];
+          if (JSON.stringify(prev) === JSON.stringify(nextMessages)) {
+            return prev;
+          }
+          return nextMessages;
+        });
+        setUsers((prev) => prev.map((u) => (u._id === activeUserId ? { ...u, unreadCount: 0 } : u)));
+      } catch (_error) {
+        // Keep silent here; socket or next poll may recover automatically.
+      }
+    }, MESSAGES_POLL_INTERVAL_MS);
+
+    return () => window.clearInterval(intervalId);
+  }, [user, selectedUser]);
 
   async function loadUsers() {
     const { data } = await api.get("/users");
