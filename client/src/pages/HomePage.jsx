@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { FiMenu, FiX } from "react-icons/fi";
+import { FiMenu, FiMinus, FiPlus, FiRotateCcw, FiX } from "react-icons/fi";
 import { useAuth } from "../context/AuthContext";
 import { useChat } from "../context/ChatContext";
 import Sidebar from "../components/Sidebar";
@@ -19,6 +19,8 @@ export default function HomePage() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isMediaOpen, setIsMediaOpen] = useState(false);
   const [previewMedia, setPreviewMedia] = useState(null);
+  const [previewZoom, setPreviewZoom] = useState(1);
+  const pinchStateRef = useRef(null);
 
   useEffect(() => {
     loadUsers().catch(() => toast.error("Failed to load users"));
@@ -43,7 +45,24 @@ export default function HomePage() {
     });
   }, [messages, selectedUser, user?._id]);
 
+  useEffect(() => {
+    setPreviewZoom(1);
+    pinchStateRef.current = null;
+  }, [previewMedia]);
+
   const filteredUsers = useMemo(() => users, [users]);
+
+  function clampZoom(value) {
+    return Math.min(4, Math.max(1, Number(value.toFixed(2))));
+  }
+
+  function getTouchDistance(touches) {
+    const [first, second] = touches;
+    if (!first || !second) return 0;
+    const dx = first.clientX - second.clientX;
+    const dy = first.clientY - second.clientY;
+    return Math.hypot(dx, dy);
+  }
 
   return (
     <div className={`min-h-screen p-0 md:grid md:place-items-center md:p-3 ${theme === "dark" ? "bg-black" : "bg-slate-100"}`}>
@@ -178,7 +197,10 @@ export default function HomePage() {
             selectedUser={selectedUser}
             messages={messages}
             currentUserId={user?._id}
-            onPreviewMedia={setPreviewMedia}
+            onPreviewMedia={(media) => {
+              setPreviewMedia(media);
+              setPreviewZoom(1);
+            }}
             onDeleteMessage={async (messageId) => {
               const confirmed = window.confirm("Delete this media?");
               if (!confirmed) return;
@@ -198,7 +220,10 @@ export default function HomePage() {
           selectedUser={selectedUser}
           messages={messages}
           currentUserId={user?._id}
-          onPreviewMedia={setPreviewMedia}
+          onPreviewMedia={(media) => {
+            setPreviewMedia(media);
+            setPreviewZoom(1);
+          }}
           onDeleteMessage={async (messageId) => {
             const confirmed = window.confirm("Delete this media?");
             if (!confirmed) return;
@@ -225,11 +250,67 @@ export default function HomePage() {
             <FiX />
           </button>
           {previewMedia.type === "image" ? (
-            <img
-              src={previewMedia.src}
-              alt="Shared media preview"
-              className="max-h-full max-w-full rounded-2xl object-contain shadow-2xl"
-            />
+            <>
+              <div className="absolute bottom-4 left-1/2 z-[61] flex -translate-x-1/2 items-center gap-2 rounded-full bg-white/10 px-3 py-2 text-white backdrop-blur">
+                <button
+                  type="button"
+                  onClick={() => setPreviewZoom((prev) => clampZoom(prev - 0.25))}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
+                  aria-label="Zoom out"
+                >
+                  <FiMinus />
+                </button>
+                <span className="min-w-12 text-center text-sm font-medium">{Math.round(previewZoom * 100)}%</span>
+                <button
+                  type="button"
+                  onClick={() => setPreviewZoom((prev) => clampZoom(prev + 0.25))}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
+                  aria-label="Zoom in"
+                >
+                  <FiPlus />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewZoom(1)}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
+                  aria-label="Reset zoom"
+                >
+                  <FiRotateCcw />
+                </button>
+              </div>
+              <div
+                className="flex max-h-full max-w-full items-center justify-center overflow-auto rounded-2xl"
+                onWheel={(e) => {
+                  e.preventDefault();
+                  const delta = e.deltaY < 0 ? 0.2 : -0.2;
+                  setPreviewZoom((prev) => clampZoom(prev + delta));
+                }}
+                onTouchStart={(e) => {
+                  if (e.touches.length !== 2) return;
+                  pinchStateRef.current = {
+                    distance: getTouchDistance(e.touches),
+                    zoom: previewZoom,
+                  };
+                }}
+                onTouchMove={(e) => {
+                  if (e.touches.length !== 2 || !pinchStateRef.current) return;
+                  const nextDistance = getTouchDistance(e.touches);
+                  const baseDistance = pinchStateRef.current.distance || nextDistance;
+                  const scaleRatio = nextDistance / baseDistance;
+                  setPreviewZoom(clampZoom(pinchStateRef.current.zoom * scaleRatio));
+                }}
+                onTouchEnd={() => {
+                  pinchStateRef.current = null;
+                }}
+              >
+                <img
+                  src={previewMedia.src}
+                  alt="Shared media preview"
+                  className="max-h-full max-w-full rounded-2xl object-contain shadow-2xl transition-transform duration-150"
+                  style={{ transform: `scale(${previewZoom})`, transformOrigin: "center center" }}
+                />
+              </div>
+            </>
           ) : (
             <video controls autoPlay className="max-h-full max-w-full rounded-2xl object-contain shadow-2xl">
               <source src={previewMedia.src} />
