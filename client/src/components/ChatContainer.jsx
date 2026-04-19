@@ -88,11 +88,11 @@ export default function ChatContainer({
                     <div
                       role="button"
                       tabIndex={0}
-                      onClick={() => onPreviewMedia?.({ type: "image", src: m.image })}
+                      onClick={() => onPreviewMedia?.({ id: m._id, type: "image", src: m.image })}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
-                          onPreviewMedia?.({ type: "image", src: m.image });
+                          onPreviewMedia?.({ id: m._id, type: "image", src: m.image });
                         }
                       }}
                       className="mt-2 block cursor-zoom-in"
@@ -104,11 +104,11 @@ export default function ChatContainer({
                     <div
                       role="button"
                       tabIndex={0}
-                      onClick={() => onPreviewMedia?.({ type: "video", src: m.video })}
+                      onClick={() => onPreviewMedia?.({ id: m._id, type: "video", src: m.video })}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
-                          onPreviewMedia?.({ type: "video", src: m.video });
+                          onPreviewMedia?.({ id: m._id, type: "video", src: m.video });
                         }
                       }}
                       className="mt-2 block cursor-zoom-in"

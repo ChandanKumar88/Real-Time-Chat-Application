@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { FiMenu, FiMinus, FiPlus, FiRotateCcw, FiX } from "react-icons/fi";
+import { FiChevronLeft, FiChevronRight, FiMenu, FiMinus, FiPlus, FiRotateCcw, FiX } from "react-icons/fi";
 import { useAuth } from "../context/AuthContext";
 import { useChat } from "../context/ChatContext";
 import Sidebar from "../components/Sidebar";
@@ -51,6 +51,17 @@ export default function HomePage() {
   }, [previewMedia]);
 
   const filteredUsers = useMemo(() => users, [users]);
+  const previewableMedia = useMemo(
+    () =>
+      messages
+        .filter((m) => m.image || m.video)
+        .map((m) => ({
+          id: m._id,
+          type: m.image ? "image" : "video",
+          src: m.image || m.video,
+        })),
+    [messages]
+  );
 
   function clampZoom(value) {
     return Math.min(4, Math.max(1, Number(value.toFixed(2))));
@@ -63,6 +74,40 @@ export default function HomePage() {
     const dy = first.clientY - second.clientY;
     return Math.hypot(dx, dy);
   }
+
+  function openPreview(media) {
+    const matchedMedia =
+      previewableMedia.find((item) => (media.id ? item.id === media.id : item.src === media.src && item.type === media.type)) || media;
+    setPreviewMedia(matchedMedia);
+    setPreviewZoom(1);
+  }
+
+  function stepPreview(direction) {
+    if (!previewMedia || previewableMedia.length <= 1) return;
+    const currentIndex = previewableMedia.findIndex((item) => item.id === previewMedia.id);
+    if (currentIndex === -1) return;
+    const nextIndex = (currentIndex + direction + previewableMedia.length) % previewableMedia.length;
+    setPreviewMedia(previewableMedia[nextIndex]);
+  }
+
+  useEffect(() => {
+    if (!previewMedia) return;
+
+    function handleKeyDown(event) {
+      if (event.key === "Escape") {
+        setPreviewMedia(null);
+      }
+      if (event.key === "ArrowLeft") {
+        stepPreview(-1);
+      }
+      if (event.key === "ArrowRight") {
+        stepPreview(1);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [previewMedia, previewableMedia]);
 
   return (
     <div className={`min-h-screen p-0 md:grid md:place-items-center md:p-3 ${theme === "dark" ? "bg-black" : "bg-slate-100"}`}>
@@ -162,7 +207,7 @@ export default function HomePage() {
           video={video}
           theme={theme}
           onOpenMedia={() => setIsMediaOpen(true)}
-          onPreviewMedia={setPreviewMedia}
+          onPreviewMedia={openPreview}
           onDeleteMessage={async (messageId) => {
             const confirmed = window.confirm("Delete this message?");
             if (!confirmed) return;
@@ -197,10 +242,7 @@ export default function HomePage() {
             selectedUser={selectedUser}
             messages={messages}
             currentUserId={user?._id}
-            onPreviewMedia={(media) => {
-              setPreviewMedia(media);
-              setPreviewZoom(1);
-            }}
+            onPreviewMedia={openPreview}
             onDeleteMessage={async (messageId) => {
               const confirmed = window.confirm("Delete this media?");
               if (!confirmed) return;
@@ -220,10 +262,7 @@ export default function HomePage() {
           selectedUser={selectedUser}
           messages={messages}
           currentUserId={user?._id}
-          onPreviewMedia={(media) => {
-            setPreviewMedia(media);
-            setPreviewZoom(1);
-          }}
+          onPreviewMedia={openPreview}
           onDeleteMessage={async (messageId) => {
             const confirmed = window.confirm("Delete this media?");
             if (!confirmed) return;
@@ -241,6 +280,26 @@ export default function HomePage() {
 
       {previewMedia ? (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          {previewableMedia.length > 1 && (
+            <>
+              <button
+                type="button"
+                onClick={() => stepPreview(-1)}
+                className="absolute left-4 top-1/2 z-[61] inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur hover:bg-white/20"
+                aria-label="Previous media"
+              >
+                <FiChevronLeft />
+              </button>
+              <button
+                type="button"
+                onClick={() => stepPreview(1)}
+                className="absolute right-4 top-1/2 z-[61] inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur hover:bg-white/20"
+                aria-label="Next media"
+              >
+                <FiChevronRight />
+              </button>
+            </>
+          )}
           <button
             type="button"
             onClick={() => setPreviewMedia(null)}
@@ -277,6 +336,11 @@ export default function HomePage() {
                 >
                   <FiRotateCcw />
                 </button>
+                {previewableMedia.length > 1 && (
+                  <span className="min-w-14 text-center text-sm font-medium">
+                    {previewableMedia.findIndex((item) => item.id === previewMedia.id) + 1}/{previewableMedia.length}
+                  </span>
+                )}
               </div>
               <div
                 className="flex max-h-full max-w-full items-center justify-center overflow-auto rounded-2xl"

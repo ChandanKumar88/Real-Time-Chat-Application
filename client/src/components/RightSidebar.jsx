@@ -51,7 +51,7 @@ export default function RightSidebar({
                   <div key={m._id} className="group relative">
                     <button
                       type="button"
-                      onClick={() => onPreviewMedia?.({ type: "image", src: m.image })}
+                      onClick={() => onPreviewMedia?.({ id: m._id, type: "image", src: m.image })}
                       className="block w-full"
                     >
                       <img src={m.image} className="h-24 w-full rounded-xl object-cover" />
@@ -71,7 +71,7 @@ export default function RightSidebar({
                   <div key={m._id} className="group relative">
                     <button
                       type="button"
-                      onClick={() => onPreviewMedia?.({ type: "video", src: m.video })}
+                      onClick={() => onPreviewMedia?.({ id: m._id, type: "video", src: m.video })}
                       className="block w-full"
                     >
                       <video className="h-24 w-full rounded-xl object-cover">
