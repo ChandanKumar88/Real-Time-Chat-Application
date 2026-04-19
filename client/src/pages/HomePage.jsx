@@ -20,6 +20,7 @@ export default function HomePage() {
   const [isMediaOpen, setIsMediaOpen] = useState(false);
   const [previewMedia, setPreviewMedia] = useState(null);
   const [previewZoom, setPreviewZoom] = useState(1);
+  const [previewVideoRatio, setPreviewVideoRatio] = useState(null);
   const pinchStateRef = useRef(null);
 
   useEffect(() => {
@@ -47,6 +48,7 @@ export default function HomePage() {
 
   useEffect(() => {
     setPreviewZoom(1);
+    setPreviewVideoRatio(null);
     pinchStateRef.current = null;
   }, [previewMedia]);
 
@@ -131,6 +133,8 @@ export default function HomePage() {
     const nextIndex = (currentIndex + direction + previewableMedia.length) % previewableMedia.length;
     setPreviewMedia(previewableMedia[nextIndex]);
   }
+
+  const isPortraitPreviewVideo = previewMedia?.type === "video" && previewVideoRatio && previewVideoRatio < 1;
 
   useEffect(() => {
     if (!previewMedia) return;
@@ -461,7 +465,7 @@ export default function HomePage() {
               </div>
             </>
           ) : (
-            <div className="relative flex max-h-[88vh] max-w-[min(92vw,960px)] flex-col items-center justify-center gap-4">
+            <div className="relative flex max-h-[88vh] max-w-[min(92vw,1100px)] flex-col items-center justify-center gap-4">
               <div className="z-[61] flex flex-wrap items-center justify-center gap-2 rounded-full bg-white/10 px-3 py-2 text-white backdrop-blur">
                 <button
                   type="button"
@@ -485,12 +489,27 @@ export default function HomePage() {
                   </span>
                 )}
               </div>
-              <div className="flex max-h-[78vh] max-w-full items-center justify-center overflow-hidden rounded-[28px] bg-black/80 p-2 shadow-2xl backdrop-blur-sm sm:p-3">
+              <div
+                className={`flex max-h-[78vh] max-w-full items-center justify-center overflow-hidden bg-black/80 shadow-2xl backdrop-blur-sm ${
+                  isPortraitPreviewVideo
+                    ? "rounded-[32px] border border-white/10 px-3 py-4 sm:px-4 sm:py-5"
+                    : "rounded-[28px] p-2 sm:p-3"
+                }`}
+              >
                 <video
                   controls
                   autoPlay
                   playsInline
-                  className="block max-h-[72vh] max-w-[min(88vw,920px)] rounded-[22px] bg-black object-contain"
+                  onLoadedMetadata={(event) => {
+                    const { videoWidth, videoHeight } = event.currentTarget;
+                    if (!videoWidth || !videoHeight) return;
+                    setPreviewVideoRatio(videoWidth / videoHeight);
+                  }}
+                  className={`block bg-black object-contain ${
+                    isPortraitPreviewVideo
+                      ? "max-h-[70vh] w-auto max-w-[82vw] rounded-[26px] sm:max-w-[min(52vw,420px)] lg:max-w-[min(36vw,360px)]"
+                      : "max-h-[72vh] max-w-[min(88vw,920px)] rounded-[22px]"
+                  }`}
                 >
                   <source src={previewMedia.src} />
                 </video>
