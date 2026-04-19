@@ -6,7 +6,7 @@ import ProfileAvatar from "./ProfileAvatar";
 import { processImageFile } from "../utils/image";
 
 const IS_VERCEL_HOSTED = typeof window !== "undefined" && window.location.hostname.endsWith("vercel.app");
-const MAX_VIDEO_SIZE_MB = IS_VERCEL_HOSTED ? 3 : 12;
+const MAX_VIDEO_SIZE_MB = IS_VERCEL_HOSTED ? 4.5 : 12;
 
 export default function ChatContainer({
   user,
@@ -184,7 +184,7 @@ export default function ChatContainer({
                   if (file.size > maxVideoBytes) {
                     toast.error(
                       IS_VERCEL_HOSTED
-                        ? `Vercel deploy par video ${MAX_VIDEO_SIZE_MB}MB se chhota rakho, warna upload fail ho jayega`
+                        ? `Vercel deploy par video ${MAX_VIDEO_SIZE_MB}MB ya usse chhota rakho, warna upload fail ho sakta hai`
                         : `Video ${MAX_VIDEO_SIZE_MB}MB se chhota rakho for faster upload`
                     );
                     e.target.value = "";
