@@ -5,7 +5,8 @@ import logoIcon from "../assets/logo_icon.svg";
 import ProfileAvatar from "./ProfileAvatar";
 import { processImageFile } from "../utils/image";
 
-const MAX_VIDEO_SIZE_MB = 12;
+const IS_VERCEL_HOSTED = typeof window !== "undefined" && window.location.hostname.endsWith("vercel.app");
+const MAX_VIDEO_SIZE_MB = IS_VERCEL_HOSTED ? 3 : 12;
 
 export default function ChatContainer({
   user,
@@ -181,7 +182,11 @@ export default function ChatContainer({
                 if (file.type.startsWith("video/")) {
                   const maxVideoBytes = MAX_VIDEO_SIZE_MB * 1024 * 1024;
                   if (file.size > maxVideoBytes) {
-                    toast.error(`Video ${MAX_VIDEO_SIZE_MB}MB se chhota rakho for faster upload`);
+                    toast.error(
+                      IS_VERCEL_HOSTED
+                        ? `Vercel deploy par video ${MAX_VIDEO_SIZE_MB}MB se chhota rakho, warna upload fail ho jayega`
+                        : `Video ${MAX_VIDEO_SIZE_MB}MB se chhota rakho for faster upload`
+                    );
                     e.target.value = "";
                     return;
                   }

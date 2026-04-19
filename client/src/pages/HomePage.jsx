@@ -134,6 +134,21 @@ export default function HomePage() {
     setPreviewMedia(previewableMedia[nextIndex]);
   }
 
+  function getSendErrorMessage(error, payload) {
+    const status = error?.response?.status;
+    const serverMessage = error?.response?.data?.message;
+
+    if (status === 413) {
+      return "Video bahut bada hai. Vercel server 4.5MB se bada upload accept nahi karta.";
+    }
+
+    if (payload?.video && !serverMessage) {
+      return "Video upload fail hua. Vercel deploy par video ko chhota rakho, warna body size limit hit hoti hai.";
+    }
+
+    return serverMessage || "Failed to send media";
+  }
+
   const isPortraitPreviewVideo = previewMedia?.type === "video" && previewVideoRatio && previewVideoRatio < 1;
 
   useEffect(() => {
@@ -276,7 +291,7 @@ export default function HomePage() {
               setText(payload.text);
               setImage(payload.image);
               setVideo(payload.video);
-              toast.error(error?.response?.data?.message || "Failed to send media");
+              toast.error(getSendErrorMessage(error, payload));
             }
           }}
         />
