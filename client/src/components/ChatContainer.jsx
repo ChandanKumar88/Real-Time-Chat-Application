@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import toast from "react-hot-toast";
-import { FiImage, FiSend, FiTrash2, FiX } from "react-icons/fi";
+import { FiGrid, FiImage, FiSend, FiTrash2, FiX } from "react-icons/fi";
 import logoIcon from "../assets/logo_icon.svg";
 import ProfileAvatar from "./ProfileAvatar";
 import { processImageFile } from "../utils/image";
@@ -19,6 +19,7 @@ export default function ChatContainer({
   video = "",
   onSend,
   onDeleteMessage,
+  onOpenMedia,
   theme = "dark",
 }) {
   const imageInputRef = useRef(null);
@@ -48,24 +49,32 @@ export default function ChatContainer({
   }
 
   return (
-    <main className={`grid h-full min-h-0 grid-rows-[auto,minmax(0,1fr),auto] overflow-hidden rounded-2xl p-3 backdrop-blur-sm ${isDark ? "border border-white/10 bg-black/15" : "border border-slate-300 bg-white/70"}`}>
-      <header className={`mb-2 flex h-[64px] items-center justify-between rounded-xl px-3 ${isDark ? "border border-white/10 bg-white/5" : "border border-slate-200 bg-white/80"}`}>
+    <main className={`grid h-full min-h-0 grid-rows-[auto,minmax(0,1fr),auto] overflow-hidden rounded-2xl p-2 backdrop-blur-sm sm:p-3 ${isDark ? "border border-white/10 bg-black/15" : "border border-slate-300 bg-white/70"}`}>
+      <header className={`mb-2 flex h-[58px] items-center justify-between rounded-xl px-3 sm:h-[64px] ${isDark ? "border border-white/10 bg-white/5" : "border border-slate-200 bg-white/80"}`}>
         <div className="flex items-center gap-3">
-          <ProfileAvatar src={selectedUser.profilePic} name={selectedUser.fullName} className="h-9 w-9 rounded-full object-cover" />
+          <ProfileAvatar src={selectedUser.profilePic} name={selectedUser.fullName} className="h-8 w-8 rounded-full object-cover sm:h-9 sm:w-9" />
           <div>
             <p className={`text-sm font-semibold ${isDark ? "text-slate-100" : "text-slate-900"}`}>{selectedUser.fullName}</p>
             <p className={`text-xs ${isDark ? "text-slate-400" : "text-slate-500"}`}>{selectedUser.isOnline ? "Online" : "Offline"}</p>
           </div>
         </div>
+        <button
+          type="button"
+          onClick={onOpenMedia}
+          className={`inline-flex h-9 w-9 items-center justify-center rounded-lg xl:hidden ${isDark ? "border border-white/10 bg-white/5 text-slate-300" : "border border-slate-200 bg-white text-slate-700"}`}
+          title="Open media"
+        >
+          <FiGrid />
+        </button>
       </header>
 
-      <div className={`chat-scroll min-h-0 space-y-2 overflow-y-auto rounded-xl p-3 ${isDark ? "bg-black/20" : "bg-white/60"}`}>
+      <div className={`chat-scroll min-h-0 space-y-2 overflow-y-auto rounded-xl p-2 sm:p-3 ${isDark ? "bg-black/20" : "bg-white/60"}`}>
         {messages.map((m) => {
           const isMine = m.senderId === user._id;
           const avatarSrc = isMine ? user?.profilePic || "https://placehold.co/28x28?text=U" : selectedUser?.profilePic || "https://placehold.co/28x28?text=U";
           return (
             <div key={m._id} className={`flex ${isMine ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[82%] ${isMine ? "items-end" : "items-start"} flex flex-col`}>
+              <div className={`max-w-[88%] sm:max-w-[82%] ${isMine ? "items-end" : "items-start"} flex flex-col`}>
                 <div className={`rounded-2xl px-3 py-2 ${isMine ? "bg-violet-600 text-white" : isDark ? "bg-white/10 text-slate-100" : "bg-slate-100 text-slate-800"}`}>
                   {!!m.text && <p className="text-sm">{m.text}</p>}
                   {!!m.image && <img src={m.image} className="mt-2 max-h-64 rounded-xl" />}

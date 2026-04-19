@@ -17,6 +17,7 @@ export default function HomePage() {
   const [video, setVideo] = useState("");
   const [theme, setTheme] = useState(() => localStorage.getItem("chat_theme") || "light");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isMediaOpen, setIsMediaOpen] = useState(false);
 
   useEffect(() => {
     loadUsers().catch(() => toast.error("Failed to load users"));
@@ -44,9 +45,9 @@ export default function HomePage() {
   const filteredUsers = useMemo(() => users, [users]);
 
   return (
-    <div className={`min-h-screen p-3 md:grid md:place-items-center ${theme === "dark" ? "bg-black" : "bg-slate-100"}`}>
+    <div className={`min-h-screen p-2 md:grid md:place-items-center md:p-3 ${theme === "dark" ? "bg-black" : "bg-slate-100"}`}>
       <div
-        className={`relative w-full max-w-6xl overflow-hidden rounded-2xl p-3 lg:h-[92vh] lg:p-4 ${
+        className={`relative w-full max-w-6xl overflow-hidden rounded-2xl p-2 lg:h-[92vh] lg:p-4 ${
           theme === "dark" ? "border border-white/25 bg-[#15151c]" : "border border-slate-300 bg-white"
         }`}
         style={{
@@ -80,7 +81,15 @@ export default function HomePage() {
         />
       )}
 
-      <div className="grid min-h-0 grid-cols-1 gap-3 lg:h-full lg:grid-cols-12">
+      {isMediaOpen && (
+        <button
+          aria-label="Close media backdrop"
+          onClick={() => setIsMediaOpen(false)}
+          className="fixed inset-0 z-30 bg-slate-900/55 xl:hidden"
+        />
+      )}
+
+      <div className="grid min-h-[calc(100vh-84px)] grid-cols-1 gap-2 lg:h-full lg:min-h-0 lg:grid-cols-12 lg:gap-3">
       <div className="hidden lg:col-span-4 lg:block lg:h-full xl:col-span-3">
         <Sidebar
           users={filteredUsers}
@@ -112,7 +121,7 @@ export default function HomePage() {
         />
       )}
 
-      <div className="min-h-0 lg:col-span-8 lg:h-full xl:col-span-6">
+      <div className="min-h-[76vh] lg:col-span-8 lg:h-full lg:min-h-0 xl:col-span-6">
         <ChatContainer
           user={user}
           selectedUser={selectedUser}
@@ -124,6 +133,7 @@ export default function HomePage() {
           image={image}
           video={video}
           theme={theme}
+          onOpenMedia={() => setIsMediaOpen(true)}
           onDeleteMessage={async (messageId) => {
             const confirmed = window.confirm("Delete this message?");
             if (!confirmed) return;
@@ -171,6 +181,26 @@ export default function HomePage() {
           />
         ) : null}
       </div>
+
+      {isMediaOpen && selectedUser ? (
+        <RightSidebar
+          selectedUser={selectedUser}
+          messages={messages}
+          currentUserId={user?._id}
+          onDeleteMessage={async (messageId) => {
+            const confirmed = window.confirm("Delete this media?");
+            if (!confirmed) return;
+            try {
+              await deleteMessage(messageId);
+            } catch (error) {
+              toast.error(error?.response?.data?.message || "Failed to delete media");
+            }
+          }}
+          theme={theme}
+          mobile
+          onCloseMobile={() => setIsMediaOpen(false)}
+        />
+      ) : null}
       </div>
       </div>
     </div>
