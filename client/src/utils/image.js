@@ -4,7 +4,7 @@ export async function processImageFile(file, options = {}) {
     maxHeight = 720,
     quality = 0.8,
     cropSquare = false,
-    mimeType = "image/jpeg",
+    mimeType = resolveMimeType(file, options.mimeType),
   } = options;
 
   const dataUrl = await readAsDataURL(file);
@@ -22,6 +22,16 @@ export async function processImageFile(file, options = {}) {
   ctx.drawImage(img, source.sx, source.sy, source.sw, source.sh, 0, 0, targetWidth, targetHeight);
 
   return canvas.toDataURL(mimeType, quality);
+}
+
+function resolveMimeType(file, requestedMimeType) {
+  if (requestedMimeType) return requestedMimeType;
+
+  const fileType = typeof file?.type === "string" ? file.type.toLowerCase() : "";
+  if (fileType === "image/png") return "image/png";
+  if (fileType === "image/webp") return "image/webp";
+
+  return "image/jpeg";
 }
 
 function readAsDataURL(file) {
