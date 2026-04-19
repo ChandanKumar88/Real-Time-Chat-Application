@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { FiChevronLeft, FiChevronRight, FiMenu, FiMinus, FiPlus, FiRotateCcw, FiX } from "react-icons/fi";
+import { FiChevronLeft, FiChevronRight, FiDownload, FiMenu, FiMinus, FiPlus, FiRotateCcw, FiShare2, FiX } from "react-icons/fi";
 import { useAuth } from "../context/AuthContext";
 import { useChat } from "../context/ChatContext";
 import Sidebar from "../components/Sidebar";
@@ -73,6 +73,48 @@ export default function HomePage() {
     const dx = first.clientX - second.clientX;
     const dy = first.clientY - second.clientY;
     return Math.hypot(dx, dy);
+  }
+
+  async function handleDownloadPreview() {
+    if (!previewMedia?.src) return;
+    try {
+      const response = await fetch(previewMedia.src);
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const extension = previewMedia.type === "image" ? "jpg" : "mp4";
+      link.href = blobUrl;
+      link.download = `quickchat-media.${extension}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(blobUrl);
+    } catch (_error) {
+      window.open(previewMedia.src, "_blank", "noopener,noreferrer");
+    }
+  }
+
+  async function handleSharePreview() {
+    if (!previewMedia?.src) return;
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: "QuickChat Media",
+          url: previewMedia.src,
+        });
+        return;
+      }
+
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(previewMedia.src);
+        toast.success("Media link copied");
+        return;
+      }
+    } catch (_error) {
+      // Fall through to final fallback.
+    }
+
+    window.open(previewMedia.src, "_blank", "noopener,noreferrer");
   }
 
   function openPreview(media) {
@@ -336,6 +378,22 @@ export default function HomePage() {
                 >
                   <FiRotateCcw />
                 </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadPreview}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
+                  aria-label="Download media"
+                >
+                  <FiDownload />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSharePreview}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
+                  aria-label="Share media"
+                >
+                  <FiShare2 />
+                </button>
                 {previewableMedia.length > 1 && (
                   <span className="min-w-14 text-center text-sm font-medium">
                     {previewableMedia.findIndex((item) => item.id === previewMedia.id) + 1}/{previewableMedia.length}
@@ -404,6 +462,29 @@ export default function HomePage() {
             </>
           ) : (
             <div className="relative flex max-h-full max-w-full items-center justify-center">
+              <div className="absolute bottom-4 left-1/2 z-[61] flex -translate-x-1/2 items-center gap-2 rounded-full bg-white/10 px-3 py-2 text-white backdrop-blur">
+                <button
+                  type="button"
+                  onClick={handleDownloadPreview}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
+                  aria-label="Download media"
+                >
+                  <FiDownload />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSharePreview}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
+                  aria-label="Share media"
+                >
+                  <FiShare2 />
+                </button>
+                {previewableMedia.length > 1 && (
+                  <span className="min-w-14 text-center text-sm font-medium">
+                    {previewableMedia.findIndex((item) => item.id === previewMedia.id) + 1}/{previewableMedia.length}
+                  </span>
+                )}
+              </div>
               {previewableMedia.length > 1 && (
                 <>
                   <button
