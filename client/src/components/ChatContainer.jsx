@@ -147,20 +147,33 @@ export default function ChatContainer({
 
       <form onSubmit={onSend} className={`mt-1 rounded-xl p-1.5 sm:mt-2 sm:p-2 ${isDark ? "border border-white/10 bg-black/40" : "border border-slate-300 bg-white/90"}`}>
         {(image || video) && (
-          <div className={`mb-2 flex items-center justify-between rounded-lg px-3 py-2 text-xs ${isDark ? "bg-white/10 text-slate-200" : "bg-slate-100 text-slate-700"}`}>
-            <span>{video ? "Video attached" : "Image attached"}</span>
-            <button
-              type="button"
-              onClick={() => {
-                setMediaError("");
-                setImage("");
-                setVideo("");
-              }}
-              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-black/10"
-            >
-              <FiX />
-              Remove
-            </button>
+          <div className={`mb-2 flex items-center gap-2 rounded-xl px-2 py-2 text-xs ${isDark ? "bg-white/10 text-slate-200" : "bg-slate-100 text-slate-700"}`}>
+            <div className={`relative h-12 w-12 shrink-0 overflow-hidden rounded-lg ${isDark ? "bg-black/30" : "bg-white"}`}>
+              {image ? (
+                <img src={image} alt="Selected media" className="h-full w-full object-cover" />
+              ) : (
+                <video className="h-full w-full object-cover" muted playsInline>
+                  <source src={video} />
+                </video>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setMediaError("");
+                  setImage("");
+                  setVideo("");
+                }}
+                className="absolute right-1 top-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-black/70 text-[11px] text-white"
+                aria-label="Remove selected media"
+                title="Remove selected media"
+              >
+                <FiX />
+              </button>
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate font-medium">{video ? "Video attached" : "Image attached"}</p>
+              <p className={`${isDark ? "text-slate-400" : "text-slate-500"}`}>Send karne se pehle yahan se hata sakte ho</p>
+            </div>
           </div>
         )}
         {!!mediaError && (
