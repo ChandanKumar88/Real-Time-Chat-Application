@@ -7,6 +7,7 @@ const ChatContext = createContext(null);
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || "http://localhost:5000";
 const USERS_POLL_INTERVAL_MS = 8000;
 const MESSAGES_POLL_INTERVAL_MS = 3000;
+const PRESENCE_PING_INTERVAL_MS = 20000;
 
 export function ChatProvider({ children }) {
   const { user } = useAuth();
@@ -15,6 +16,7 @@ export function ChatProvider({ children }) {
   const [messages, setMessages] = useState([]);
   const [socket, setSocket] = useState(null);
   const selectedUserRef = useRef(null);
+  const onlineUserIdsRef = useRef(new Set());
 
   useEffect(() => {
     selectedUserRef.current = selectedUser;
@@ -28,10 +30,15 @@ export function ChatProvider({ children }) {
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
     });
-    s.on("connect", () => {
+    const announceOnline = () => {
       s.emit("user:online", user._id);
-    });
+      api.patch("/users/presence/online").catch(() => null);
+    };
+
+    s.on("connect", announceOnline);
+    s.io.on("reconnect", announceOnline);
     s.on("presence:update", (onlineIds) => {
+      onlineUserIdsRef.current = new Set(onlineIds);
       setUsers((prev) => prev.map((u) => ({ ...u, isOnline: onlineIds.includes(u._id) })));
     });
     s.on("message:new", (message) => {
@@ -51,13 +58,25 @@ export function ChatProvider({ children }) {
       setMessages((prev) => prev.filter((m) => m._id !== messageId));
     });
     setSocket(s);
-    return () => s.disconnect();
+    const pingInterval = window.setInterval(() => {
+      if (s.connected) s.emit("presence:ping", user._id);
+      api.patch("/users/presence/online").catch(() => null);
+    }, PRESENCE_PING_INTERVAL_MS);
+    document.addEventListener("visibilitychange", announceOnline);
+
+    return () => {
+      window.clearInterval(pingInterval);
+      document.removeEventListener("visibilitychange", announceOnline);
+      s.io.off("reconnect", announceOnline);
+      s.disconnect();
+    };
   }, [user]);
 
   useEffect(() => {
     if (!user) return;
 
     const intervalId = window.setInterval(() => {
+      // eslint-disable-next-line react-hooks/immutability
       loadUsers().catch(() => null);
     }, USERS_POLL_INTERVAL_MS);
 
@@ -81,7 +100,7 @@ export function ChatProvider({ children }) {
           return nextMessages;
         });
         setUsers((prev) => prev.map((u) => (u._id === activeUserId ? { ...u, unreadCount: 0 } : u)));
-      } catch (_error) {
+      } catch {
         // Keep silent here; socket or next poll may recover automatically.
       }
     }, MESSAGES_POLL_INTERVAL_MS);
@@ -91,7 +110,7 @@ export function ChatProvider({ children }) {
 
   async function loadUsers() {
     const { data } = await api.get("/users");
-    setUsers(data.data);
+    setUsers(data.data.map((u) => ({ ...u, isOnline: Boolean(u.isOnline) || onlineUserIdsRef.current.has(u._id) })));
   }
 
   async function loadMessages(userId) {
@@ -149,4 +168,5 @@ export function ChatProvider({ children }) {
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const useChat = () => useContext(ChatContext);

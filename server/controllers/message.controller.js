@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 const Message = require("../models/Message");
 const { cloudinary } = require("../config/cloudinary");
-const { getSocketIdByUserId } = require("../socket/presenceStore");
+const { getSocketIdsByUserId } = require("../socket/presenceStore");
 
 async function getConversation(req, res) {
   const { userId } = req.params;
@@ -57,9 +57,9 @@ async function sendMessage(req, res) {
   });
 
   const io = req.app.get("io");
-  const receiverSocketId = getSocketIdByUserId(userId);
-  if (receiverSocketId) {
-    io.to(receiverSocketId).emit("message:new", message);
+  const receiverSocketIds = getSocketIdsByUserId(userId);
+  if (receiverSocketIds.length > 0) {
+    io.to(receiverSocketIds).emit("message:new", message);
   }
 
   res.status(201).json({ success: true, data: message });
@@ -80,9 +80,9 @@ async function markSeen(req, res) {
   await message.save();
 
   const io = req.app.get("io");
-  const senderSocketId = getSocketIdByUserId(message.senderId.toString());
-  if (senderSocketId) {
-    io.to(senderSocketId).emit("message:seen", message);
+  const senderSocketIds = getSocketIdsByUserId(message.senderId.toString());
+  if (senderSocketIds.length > 0) {
+    io.to(senderSocketIds).emit("message:seen", message);
   }
 
   res.json({ success: true, message: "Marked as seen", data: message });
@@ -102,9 +102,9 @@ async function deleteMessage(req, res) {
   await Message.findByIdAndDelete(messageId);
 
   const io = req.app.get("io");
-  const receiverSocketId = getSocketIdByUserId(message.receiverId.toString());
-  if (receiverSocketId) {
-    io.to(receiverSocketId).emit("message:deleted", { messageId });
+  const receiverSocketIds = getSocketIdsByUserId(message.receiverId.toString());
+  if (receiverSocketIds.length > 0) {
+    io.to(receiverSocketIds).emit("message:deleted", { messageId });
   }
 
   res.json({ success: true, message: "Message deleted", data: { messageId } });
