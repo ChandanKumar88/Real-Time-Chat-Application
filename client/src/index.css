@@ -24,3 +24,8 @@ body {
 .chat-scroll::-webkit-scrollbar {
   display: none;
 }
+
+.google-button-shell iframe,
+.google-button-shell > div {
+  max-width: 100% !important;
+}

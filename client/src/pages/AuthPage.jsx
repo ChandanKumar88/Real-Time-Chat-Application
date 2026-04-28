@@ -44,6 +44,9 @@ export default function AuthPage({ mode = "login" }) {
 
     function renderGoogleButton() {
       if (cancelled || !window.google?.accounts?.id || !googleButtonRef.current) return;
+      const buttonWidth = Math.floor(
+        Math.min(400, googleButtonRef.current.getBoundingClientRect().width || googleButtonRef.current.parentElement?.clientWidth || 320)
+      );
 
       window.google.accounts.id.initialize({
         client_id: googleClientId,
@@ -59,7 +62,7 @@ export default function AuthPage({ mode = "login" }) {
         text: isSignup ? "signup_with" : "signin_with",
         shape: "rectangular",
         logo_alignment: "left",
-        width: Math.min(382, googleButtonRef.current.offsetWidth || 382),
+        width: buttonWidth,
       });
       setGoogleButtonReady(true);
     }
@@ -78,6 +81,14 @@ export default function AuthPage({ mode = "login" }) {
       document.body.appendChild(script);
     }
 
+    let resizeObserver;
+    if (window.ResizeObserver && googleButtonRef.current) {
+      resizeObserver = new ResizeObserver(() => {
+        if (googleButtonReady) renderGoogleButton();
+      });
+      resizeObserver.observe(googleButtonRef.current);
+    }
+
     if (window.google?.accounts?.id) {
       renderGoogleButton();
     } else {
@@ -87,10 +98,11 @@ export default function AuthPage({ mode = "login" }) {
 
     return () => {
       cancelled = true;
+      resizeObserver?.disconnect();
       script.removeEventListener("load", renderGoogleButton);
       script.removeEventListener("error", handleScriptError);
     };
-  }, [googleClientId, handleGoogleCredential, isSignup]);
+  }, [googleButtonReady, googleClientId, handleGoogleCredential, isSignup]);
 
   async function submit(e) {
     e.preventDefault();
@@ -117,10 +129,10 @@ export default function AuthPage({ mode = "login" }) {
   }
 
   return (
-    <div className="relative grid min-h-screen grid-cols-1 overflow-hidden bg-black text-white md:grid-cols-2">
+    <div className="relative grid min-h-screen w-full grid-cols-1 overflow-x-hidden bg-black text-white md:grid-cols-2">
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute left-1/3 top-1/2 h-[420px] w-[420px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-violet-600/40 blur-[90px]" />
-        <div className="absolute left-1/2 top-1/2 h-[360px] w-[360px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-indigo-500/25 blur-[80px]" />
+        <div className="absolute left-1/3 top-1/2 h-[280px] w-[280px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-violet-600/40 blur-[80px] sm:h-[420px] sm:w-[420px]" />
+        <div className="absolute left-1/2 top-1/2 h-[260px] w-[260px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-indigo-500/25 blur-[70px] sm:h-[360px] sm:w-[360px]" />
       </div>
 
       <section className="relative hidden items-center justify-center p-10 md:flex">
@@ -132,10 +144,10 @@ export default function AuthPage({ mode = "login" }) {
         </div>
       </section>
 
-      <section className="relative grid place-items-center p-4">
+      <section className="relative grid min-w-0 place-items-center px-3 py-8 sm:p-4">
         <form
           onSubmit={submit}
-          className="w-full max-w-[430px] rounded-xl border border-white/20 bg-black/45 p-6 shadow-2xl backdrop-blur-md"
+          className="w-full min-w-0 max-w-[430px] rounded-xl border border-white/20 bg-black/45 p-4 shadow-2xl backdrop-blur-md sm:p-6"
         >
           <h2 className="mb-5 text-3xl font-semibold">{isSignup ? "Sign up" : "Login"}</h2>
 
@@ -201,9 +213,9 @@ export default function AuthPage({ mode = "login" }) {
           </div>
 
           {googleClientId ? (
-            <div className="min-h-10 w-full overflow-hidden rounded-md bg-white">
+            <div className="google-button-shell min-h-10 w-full min-w-0 overflow-hidden rounded-md bg-white">
               {!googleButtonReady && <div className="px-4 py-2 text-center text-sm text-slate-600">Loading Google...</div>}
-              <div ref={googleButtonRef} className={googleButtonReady ? "" : "hidden"} />
+              <div ref={googleButtonRef} className="w-full min-w-0" />
             </div>
           ) : (
             <div className="rounded-md border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-xs text-amber-100">
