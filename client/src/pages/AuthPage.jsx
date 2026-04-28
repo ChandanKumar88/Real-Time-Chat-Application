@@ -201,8 +201,9 @@ export default function AuthPage({ mode = "login" }) {
           </div>
 
           {googleClientId ? (
-            <div className="min-h-10 w-full overflow-hidden rounded-md bg-white" ref={googleButtonRef}>
+            <div className="min-h-10 w-full overflow-hidden rounded-md bg-white">
               {!googleButtonReady && <div className="px-4 py-2 text-center text-sm text-slate-600">Loading Google...</div>}
+              <div ref={googleButtonRef} className={googleButtonReady ? "" : "hidden"} />
             </div>
           ) : (
             <div className="rounded-md border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-xs text-amber-100">
