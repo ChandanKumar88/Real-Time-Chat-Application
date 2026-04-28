@@ -60,7 +60,14 @@ export default function ChatContainer({
           <ProfileAvatar src={selectedUser.profilePic} name={selectedUser.fullName} className="h-8 w-8 shrink-0 rounded-full object-cover sm:h-9 sm:w-9" />
           <div className="min-w-0">
             <p className={`truncate text-sm font-semibold ${isDark ? "text-slate-100" : "text-slate-900"}`}>{selectedUser.fullName}</p>
-            <p className={`text-xs ${isDark ? "text-slate-400" : "text-slate-500"}`}>{selectedUser.isOnline ? "Online" : "Offline"}</p>
+            <p
+              className={`inline-flex items-center gap-1.5 text-xs ${
+                selectedUser.isOnline ? "text-emerald-500" : isDark ? "text-slate-400" : "text-slate-500"
+              }`}
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${selectedUser.isOnline ? "bg-emerald-500" : "bg-slate-400"}`} />
+              {selectedUser.isOnline ? "Online" : "Offline"}
+            </p>
           </div>
         </div>
         <button
@@ -236,7 +243,7 @@ export default function ChatContainer({
                 setMediaError("");
                 setImage(compressedImage);
                 setVideo("");
-              } catch (_error) {
+              } catch {
                 setMediaError("Media process nahi ho pa raha");
                 toast.error("Media process nahi ho pa raha");
               } finally {

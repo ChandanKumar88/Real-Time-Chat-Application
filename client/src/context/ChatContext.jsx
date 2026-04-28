@@ -23,6 +23,26 @@ export function ChatProvider({ children }) {
   }, [selectedUser]);
 
   useEffect(() => {
+    if (!selectedUser) return;
+
+    const freshSelectedUser = users.find((u) => u._id === selectedUser._id);
+    if (!freshSelectedUser) return;
+
+    setSelectedUser((prev) => {
+      if (!prev || prev._id !== freshSelectedUser._id) return prev;
+      if (
+        prev.isOnline === freshSelectedUser.isOnline &&
+        prev.fullName === freshSelectedUser.fullName &&
+        prev.profilePic === freshSelectedUser.profilePic &&
+        prev.bio === freshSelectedUser.bio
+      ) {
+        return prev;
+      }
+      return { ...prev, ...freshSelectedUser };
+    });
+  }, [users, selectedUser]);
+
+  useEffect(() => {
     if (!user) return;
     const s = io(SOCKET_URL, {
       transports: ["websocket", "polling"],
@@ -40,6 +60,7 @@ export function ChatProvider({ children }) {
     s.on("presence:update", (onlineIds) => {
       onlineUserIdsRef.current = new Set(onlineIds);
       setUsers((prev) => prev.map((u) => ({ ...u, isOnline: onlineIds.includes(u._id) })));
+      setSelectedUser((prev) => (prev ? { ...prev, isOnline: onlineIds.includes(prev._id) } : prev));
     });
     s.on("message:new", (message) => {
       if (selectedUserRef.current && message.senderId === selectedUserRef.current._id) {

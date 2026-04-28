@@ -40,6 +40,14 @@ export default function RightSidebar({
           </div>
           <ProfileAvatar src={selectedUser.profilePic} name={selectedUser.fullName} className="mx-auto h-20 w-20 rounded-full object-cover sm:h-28 sm:w-28" />
           <h3 className={`mt-3 text-center text-lg font-semibold sm:text-xl ${isDark ? "text-slate-100" : "text-slate-900"}`}>{selectedUser.fullName}</h3>
+          <p
+            className={`mt-1 flex items-center justify-center gap-1.5 text-xs ${
+              selectedUser.isOnline ? "text-emerald-500" : isDark ? "text-slate-400" : "text-slate-500"
+            }`}
+          >
+            <span className={`h-1.5 w-1.5 rounded-full ${selectedUser.isOnline ? "bg-emerald-500" : "bg-slate-400"}`} />
+            {selectedUser.isOnline ? "Online" : "Offline"}
+          </p>
           <p className={`mt-1 text-center text-sm ${isDark ? "text-slate-400" : "text-slate-500"}`}>{selectedUser.bio || "No bio available."}</p>
 
           <h4 className={`mt-6 mb-2 text-sm font-semibold uppercase tracking-wide ${isDark ? "text-slate-300" : "text-slate-600"}`}>Media</h4>
