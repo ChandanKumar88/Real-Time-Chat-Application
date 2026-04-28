@@ -2,6 +2,19 @@ const bcrypt = require("bcryptjs");
 const User = require("../models/User");
 const { generateToken } = require("../utils/token");
 const { cloudinary } = require("../config/cloudinary");
+const { verifyGoogleIdToken } = require("../utils/googleAuth");
+
+function serializeUser(user) {
+  return {
+    _id: user._id,
+    fullName: user.fullName,
+    email: user.email,
+    bio: user.bio,
+    profilePic: user.profilePic,
+    isOnline: user.isOnline,
+    authProvider: user.authProvider,
+  };
+}
 
 async function signup(req, res) {
   const { fullName, email, password, bio, profilePic } = req.body;
@@ -41,13 +54,7 @@ async function signup(req, res) {
     message: "Signup successful",
     data: {
       token: generateToken(user),
-      user: {
-        _id: user._id,
-        fullName: user.fullName,
-        email: user.email,
-        bio: user.bio,
-        profilePic: user.profilePic,
-      },
+      user: serializeUser(user),
     },
   });
 }
@@ -62,6 +69,9 @@ async function login(req, res) {
   if (!user) {
     return res.status(401).json({ success: false, message: "Invalid credentials" });
   }
+  if (!user.password) {
+    return res.status(401).json({ success: false, message: "Please continue with Google for this account" });
+  }
 
   const match = await bcrypt.compare(password, user.password);
   if (!match) {
@@ -74,16 +84,59 @@ async function login(req, res) {
     message: "Login successful",
     data: {
       token,
-      user: {
-        _id: user._id,
-        fullName: user.fullName,
-        email: user.email,
-        bio: user.bio,
-        profilePic: user.profilePic,
-        isOnline: user.isOnline,
-      },
+      user: serializeUser(user),
     },
   });
+}
+
+async function googleLogin(req, res) {
+  try {
+    const payload = await verifyGoogleIdToken(req.body.credential);
+    const email = payload.email.toLowerCase();
+
+    let user = await User.findOne({
+      $or: [{ googleId: payload.sub }, { email }],
+    });
+
+    if (user) {
+      let shouldSave = false;
+      if (!user.googleId) {
+        user.googleId = payload.sub;
+        shouldSave = true;
+      }
+      if (user.authProvider !== "google") {
+        user.authProvider = user.password ? "local" : "google";
+        shouldSave = true;
+      }
+      if (!user.profilePic && payload.picture) {
+        user.profilePic = payload.picture;
+        shouldSave = true;
+      }
+      if (shouldSave) await user.save();
+    } else {
+      user = await User.create({
+        fullName: payload.name || email.split("@")[0],
+        email,
+        googleId: payload.sub,
+        authProvider: "google",
+        profilePic: payload.picture || "",
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: "Google login successful",
+      data: {
+        token: generateToken(user),
+        user: serializeUser(user),
+      },
+    });
+  } catch (error) {
+    return res.status(401).json({
+      success: false,
+      message: error.message || "Google authentication failed",
+    });
+  }
 }
 
 async function me(req, res) {
@@ -94,4 +147,4 @@ async function me(req, res) {
   return res.json({ success: true, data: user });
 }
 
-module.exports = { signup, login, me };
+module.exports = { signup, login, googleLogin, me };

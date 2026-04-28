@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { HiMiniChatBubbleBottomCenterText } from "react-icons/hi2";
@@ -9,8 +9,88 @@ export default function AuthPage({ mode = "login" }) {
   const [isSignup, setIsSignup] = useState(mode === "signup");
   const [form, setForm] = useState({ fullName: "", email: "", password: "", bio: "", profilePic: "" });
   const [acceptTerms, setAcceptTerms] = useState(false);
-  const { login, signup } = useAuth();
+  const [googleButtonReady, setGoogleButtonReady] = useState(false);
+  const googleButtonRef = useRef(null);
+  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+  const { login, signup, googleLogin } = useAuth();
   const navigate = useNavigate();
+
+  const handleGoogleCredential = useCallback(
+    async (credential) => {
+      if (!credential) {
+        toast.error("Google credential nahi mila");
+        return;
+      }
+
+      try {
+        await googleLogin(credential);
+        toast.success(isSignup ? "Account created with Google" : "Welcome back");
+        navigate("/");
+      } catch (error) {
+        const message =
+          error.response?.data?.message ||
+          (error.request ? "Backend server se connection nahi ho pa raha" : "Google authentication failed");
+        toast.error(message);
+      }
+    },
+    [googleLogin, isSignup, navigate]
+  );
+
+  useEffect(() => {
+    if (!googleClientId) return;
+
+    let cancelled = false;
+    const scriptId = "google-identity-client";
+
+    function renderGoogleButton() {
+      if (cancelled || !window.google?.accounts?.id || !googleButtonRef.current) return;
+
+      window.google.accounts.id.initialize({
+        client_id: googleClientId,
+        callback: (response) => handleGoogleCredential(response.credential),
+        ux_mode: "popup",
+      });
+
+      googleButtonRef.current.innerHTML = "";
+      window.google.accounts.id.renderButton(googleButtonRef.current, {
+        type: "standard",
+        theme: "outline",
+        size: "large",
+        text: isSignup ? "signup_with" : "signin_with",
+        shape: "rectangular",
+        logo_alignment: "left",
+        width: Math.min(382, googleButtonRef.current.offsetWidth || 382),
+      });
+      setGoogleButtonReady(true);
+    }
+
+    function handleScriptError() {
+      if (!cancelled) toast.error("Google sign-in load nahi ho paaya");
+    }
+
+    let script = document.getElementById(scriptId);
+    if (!script) {
+      script = document.createElement("script");
+      script.id = scriptId;
+      script.src = "https://accounts.google.com/gsi/client";
+      script.async = true;
+      script.defer = true;
+      document.body.appendChild(script);
+    }
+
+    if (window.google?.accounts?.id) {
+      renderGoogleButton();
+    } else {
+      script.addEventListener("load", renderGoogleButton);
+      script.addEventListener("error", handleScriptError);
+    }
+
+    return () => {
+      cancelled = true;
+      script.removeEventListener("load", renderGoogleButton);
+      script.removeEventListener("error", handleScriptError);
+    };
+  }, [googleClientId, handleGoogleCredential, isSignup]);
 
   async function submit(e) {
     e.preventDefault();
@@ -84,7 +164,7 @@ export default function AuthPage({ mode = "login" }) {
                           quality: 0.75,
                         });
                         setForm((prev) => ({ ...prev, profilePic: compressed }));
-                      } catch (_error) {
+                      } catch {
                         toast.error("Unable to process image");
                       }
                     }}
@@ -113,6 +193,22 @@ export default function AuthPage({ mode = "login" }) {
           <button className="w-full rounded-md bg-gradient-to-r from-violet-500 to-fuchsia-500 py-2.5 font-medium text-white transition hover:opacity-95">
             {isSignup ? "Create Account" : "Login"}
           </button>
+
+          <div className="my-4 flex items-center gap-3 text-xs text-slate-400">
+            <span className="h-px flex-1 bg-white/15" />
+            <span>or</span>
+            <span className="h-px flex-1 bg-white/15" />
+          </div>
+
+          {googleClientId ? (
+            <div className="min-h-10 w-full overflow-hidden rounded-md bg-white" ref={googleButtonRef}>
+              {!googleButtonReady && <div className="px-4 py-2 text-center text-sm text-slate-600">Loading Google...</div>}
+            </div>
+          ) : (
+            <div className="rounded-md border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-xs text-amber-100">
+              Google sign-in ke liye VITE_GOOGLE_CLIENT_ID set karo.
+            </div>
+          )}
 
           {isSignup && (
             <label className="mt-4 flex items-center gap-2 text-xs text-slate-300">

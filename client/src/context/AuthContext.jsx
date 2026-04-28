@@ -15,7 +15,7 @@ export function AuthProvider({ children }) {
       try {
         const { data } = await api.get("/auth/me");
         setUser(data.data);
-      } catch (_err) {
+      } catch {
         localStorage.removeItem("chat_token");
       } finally {
         setLoading(false);
@@ -38,13 +38,21 @@ export function AuthProvider({ children }) {
     return data;
   }
 
+  async function googleLogin(credential) {
+    const { data } = await api.post("/auth/google", { credential });
+    localStorage.setItem("chat_token", data.data.token);
+    setUser(data.data.user);
+    return data;
+  }
+
   function logout() {
     localStorage.removeItem("chat_token");
     setUser(null);
   }
 
-  const value = useMemo(() => ({ user, loading, login, signup, logout, setUser }), [user, loading]);
+  const value = useMemo(() => ({ user, loading, login, signup, googleLogin, logout, setUser }), [user, loading]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const useAuth = () => useContext(AuthContext);
