@@ -14,10 +14,12 @@ export default function ChatContainer({
   messages,
   text,
   setText,
+  onTextChange,
   setImage,
   setVideo,
   image = "",
   video = "",
+  isTyping = false,
   onSend,
   onDeleteMessage,
   onOpenMedia,
@@ -62,11 +64,15 @@ export default function ChatContainer({
             <p className={`truncate text-sm font-semibold ${isDark ? "text-slate-100" : "text-slate-900"}`}>{selectedUser.fullName}</p>
             <p
               className={`inline-flex items-center gap-1.5 text-xs ${
-                selectedUser.isOnline ? "text-emerald-500" : isDark ? "text-slate-400" : "text-slate-500"
+                isTyping ? "text-violet-300" : selectedUser.isOnline ? "text-emerald-500" : isDark ? "text-slate-400" : "text-slate-500"
               }`}
             >
-              <span className={`h-1.5 w-1.5 rounded-full ${selectedUser.isOnline ? "bg-emerald-500" : "bg-slate-400"}`} />
-              {selectedUser.isOnline ? "Online" : "Offline"}
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${
+                  isTyping ? "bg-violet-300 shadow-[0_0_8px_rgba(196,181,253,0.9)]" : selectedUser.isOnline ? "bg-emerald-500" : "bg-slate-400"
+                }`}
+              />
+              {isTyping ? "Typing..." : selectedUser.isOnline ? "Online" : "Offline"}
             </p>
           </div>
         </div>
@@ -258,7 +264,7 @@ export default function ChatContainer({
                 : "border border-slate-300 bg-white text-slate-900 placeholder:text-slate-500"
             }`}
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => (onTextChange ? onTextChange(e.target.value) : setText(e.target.value))}
             placeholder="Type a message..."
           />
           <button className="inline-flex h-8 w-10 shrink-0 items-center justify-center rounded-lg bg-gradient-to-r from-violet-500 to-fuchsia-500 text-sm font-medium text-white transition hover:opacity-95 sm:h-10 sm:min-w-[88px] sm:gap-2 sm:rounded-xl sm:px-4">

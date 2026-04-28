@@ -1,5 +1,5 @@
 const User = require("../models/User");
-const { setUserSocket, removeUserSocket, getOnlineUserIds } = require("./presenceStore");
+const { setUserSocket, removeUserSocket, getSocketIdsByUserId, getOnlineUserIds } = require("./presenceStore");
 
 function registerSocketHandlers(io) {
   io.on("connection", (socket) => {
@@ -17,6 +17,22 @@ function registerSocketHandlers(io) {
 
     socket.on("presence:ping", async (userId) => {
       await markOnline(userId || socket.data.userId);
+    });
+
+    socket.on("typing:start", ({ senderId, receiverId }) => {
+      if (!senderId || !receiverId) return;
+      const receiverSocketIds = getSocketIdsByUserId(receiverId);
+      if (receiverSocketIds.length > 0) {
+        io.to(receiverSocketIds).emit("typing:update", { userId: senderId, isTyping: true });
+      }
+    });
+
+    socket.on("typing:stop", ({ senderId, receiverId }) => {
+      if (!senderId || !receiverId) return;
+      const receiverSocketIds = getSocketIdsByUserId(receiverId);
+      if (receiverSocketIds.length > 0) {
+        io.to(receiverSocketIds).emit("typing:update", { userId: senderId, isTyping: false });
+      }
     });
 
     socket.on("disconnect", async () => {

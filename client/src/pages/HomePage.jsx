@@ -10,7 +10,20 @@ import bgImage from "../assets/bgImage.svg";
 
 export default function HomePage() {
   const { user, logout } = useAuth();
-  const { users, loadUsers, selectedUser, setSelectedUser, loadMessages, messages, sendMessage, markSeen, deleteMessage } = useChat();
+  const {
+    users,
+    loadUsers,
+    selectedUser,
+    setSelectedUser,
+    loadMessages,
+    messages,
+    sendMessage,
+    markSeen,
+    deleteMessage,
+    typingUsers,
+    emitTyping,
+    stopTyping,
+  } = useChat();
   const [search, setSearch] = useState("");
   const [text, setText] = useState("");
   const [image, setImage] = useState("");
@@ -37,6 +50,7 @@ export default function HomePage() {
     loadMessages(selectedUser._id).catch((error) => {
       toast.error(error?.response?.data?.message || "Failed to load messages");
     });
+    return () => stopTyping(selectedUser._id);
   }, [selectedUser]);
 
   useEffect(() => {
@@ -53,6 +67,7 @@ export default function HomePage() {
   }, [previewMedia]);
 
   const filteredUsers = useMemo(() => users, [users]);
+  const isSelectedUserTyping = Boolean(selectedUser && typingUsers[selectedUser._id]);
   const previewableMedia = useMemo(
     () =>
       messages
@@ -91,7 +106,7 @@ export default function HomePage() {
       link.click();
       link.remove();
       URL.revokeObjectURL(blobUrl);
-    } catch (_error) {
+    } catch {
       window.open(previewMedia.src, "_blank", "noopener,noreferrer");
     }
   }
@@ -112,7 +127,7 @@ export default function HomePage() {
         toast.success("Media link copied");
         return;
       }
-    } catch (_error) {
+    } catch {
       // Fall through to final fallback.
     }
 
@@ -262,10 +277,19 @@ export default function HomePage() {
           messages={messages}
           text={text}
           setText={setText}
+          onTextChange={(value) => {
+            setText(value);
+            if (selectedUser && value.trim()) {
+              emitTyping(selectedUser._id);
+            } else if (selectedUser) {
+              stopTyping(selectedUser._id);
+            }
+          }}
           setImage={setImage}
           setVideo={setVideo}
           image={image}
           video={video}
+          isTyping={isSelectedUserTyping}
           theme={theme}
           onOpenMedia={() => setIsMediaOpen(true)}
           onPreviewMedia={openPreview}
@@ -285,6 +309,7 @@ export default function HomePage() {
             setText("");
             setImage("");
             setVideo("");
+            stopTyping(selectedUser._id);
             try {
               await sendMessage(selectedUser._id, payload);
             } catch (error) {

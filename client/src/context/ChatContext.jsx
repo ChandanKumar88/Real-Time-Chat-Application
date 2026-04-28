@@ -8,6 +8,8 @@ const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || "http://localhost:5000";
 const USERS_POLL_INTERVAL_MS = 8000;
 const MESSAGES_POLL_INTERVAL_MS = 3000;
 const PRESENCE_PING_INTERVAL_MS = 20000;
+const TYPING_STOP_DELAY_MS = 1200;
+const TYPING_STALE_MS = 4000;
 
 export function ChatProvider({ children }) {
   const { user } = useAuth();
@@ -15,8 +17,11 @@ export function ChatProvider({ children }) {
   const [selectedUser, setSelectedUser] = useState(null);
   const [messages, setMessages] = useState([]);
   const [socket, setSocket] = useState(null);
+  const [typingUsers, setTypingUsers] = useState({});
   const selectedUserRef = useRef(null);
   const onlineUserIdsRef = useRef(new Set());
+  const typingStopTimersRef = useRef({});
+  const typingStaleTimersRef = useRef({});
 
   useEffect(() => {
     selectedUserRef.current = selectedUser;
@@ -78,17 +83,33 @@ export function ChatProvider({ children }) {
     s.on("message:deleted", ({ messageId }) => {
       setMessages((prev) => prev.filter((m) => m._id !== messageId));
     });
+    s.on("typing:update", ({ userId, isTyping }) => {
+      if (!userId) return;
+
+      window.clearTimeout(typingStaleTimersRef.current[userId]);
+      setTypingUsers((prev) => ({ ...prev, [userId]: Boolean(isTyping) }));
+
+      if (isTyping) {
+        typingStaleTimersRef.current[userId] = window.setTimeout(() => {
+          setTypingUsers((prev) => ({ ...prev, [userId]: false }));
+        }, TYPING_STALE_MS);
+      }
+    });
     setSocket(s);
     const pingInterval = window.setInterval(() => {
       if (s.connected) s.emit("presence:ping", user._id);
       api.patch("/users/presence/online").catch(() => null);
     }, PRESENCE_PING_INTERVAL_MS);
     document.addEventListener("visibilitychange", announceOnline);
+    const typingStopTimers = typingStopTimersRef.current;
+    const typingStaleTimers = typingStaleTimersRef.current;
 
     return () => {
       window.clearInterval(pingInterval);
       document.removeEventListener("visibilitychange", announceOnline);
       s.io.off("reconnect", announceOnline);
+      Object.values(typingStopTimers).forEach(window.clearTimeout);
+      Object.values(typingStaleTimers).forEach(window.clearTimeout);
       s.disconnect();
     };
   }, [user]);
@@ -97,7 +118,6 @@ export function ChatProvider({ children }) {
     if (!user) return;
 
     const intervalId = window.setInterval(() => {
-      // eslint-disable-next-line react-hooks/immutability
       loadUsers().catch(() => null);
     }, USERS_POLL_INTERVAL_MS);
 
@@ -181,9 +201,42 @@ export function ChatProvider({ children }) {
     setMessages((prev) => prev.filter((m) => m._id !== messageId));
   }
 
+  function emitTyping(receiverId) {
+    if (!receiverId || !socket || !user?._id) return;
+
+    socket.emit("typing:start", { senderId: user._id, receiverId });
+    window.clearTimeout(typingStopTimersRef.current[receiverId]);
+    typingStopTimersRef.current[receiverId] = window.setTimeout(() => {
+      socket.emit("typing:stop", { senderId: user._id, receiverId });
+    }, TYPING_STOP_DELAY_MS);
+  }
+
+  function stopTyping(receiverId) {
+    if (!receiverId || !socket || !user?._id) return;
+
+    window.clearTimeout(typingStopTimersRef.current[receiverId]);
+    socket.emit("typing:stop", { senderId: user._id, receiverId });
+  }
+
   const value = useMemo(
-    () => ({ users, selectedUser, setSelectedUser, loadUsers, loadMessages, messages, sendMessage, markSeen, deleteMessage, socket, setUsers }),
-    [users, selectedUser, messages, socket]
+    () => ({
+      users,
+      selectedUser,
+      setSelectedUser,
+      loadUsers,
+      loadMessages,
+      messages,
+      sendMessage,
+      markSeen,
+      deleteMessage,
+      socket,
+      setUsers,
+      typingUsers,
+      emitTyping,
+      stopTyping,
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [users, selectedUser, messages, socket, typingUsers]
   );
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
