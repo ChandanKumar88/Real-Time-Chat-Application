@@ -1,10 +1,12 @@
 const mongoose = require("mongoose");
 const User = require("../models/User");
 const Message = require("../models/Message");
+const TypingStatus = require("../models/TypingStatus");
 const { cloudinary } = require("../config/cloudinary");
 const { getOnlineUserIds } = require("../socket/presenceStore");
 
 const ONLINE_GRACE_MS = 60 * 1000;
+const TYPING_GRACE_MS = 4500;
 
 function isRecentlyOnline(user) {
   return Boolean(user.isOnline) && user.lastSeen && Date.now() - new Date(user.lastSeen).getTime() <= ONLINE_GRACE_MS;
@@ -57,6 +59,48 @@ async function markPresenceOnline(req, res) {
   res.json({ success: true });
 }
 
+async function updateTypingStatus(req, res) {
+  const { receiverId, isTyping } = req.body;
+
+  if (!receiverId || !mongoose.isValidObjectId(receiverId)) {
+    return res.status(400).json({ success: false, message: "Invalid receiver" });
+  }
+
+  if (isTyping) {
+    await TypingStatus.findOneAndUpdate(
+      { senderId: req.user.id, receiverId },
+      {
+        senderId: req.user.id,
+        receiverId,
+        isTyping: true,
+        expiresAt: new Date(Date.now() + TYPING_GRACE_MS),
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+  } else {
+    await TypingStatus.deleteOne({ senderId: req.user.id, receiverId });
+  }
+
+  res.json({ success: true });
+}
+
+async function getTypingStatus(req, res) {
+  const { userId } = req.params;
+
+  if (!userId || !mongoose.isValidObjectId(userId)) {
+    return res.status(400).json({ success: false, message: "Invalid user" });
+  }
+
+  const status = await TypingStatus.findOne({
+    senderId: userId,
+    receiverId: req.user.id,
+    isTyping: true,
+    expiresAt: { $gt: new Date() },
+  });
+
+  res.json({ success: true, data: { userId, isTyping: Boolean(status) } });
+}
+
 async function updateProfile(req, res) {
   const { fullName, bio, profilePic } = req.body;
   const updates = {};
@@ -96,4 +140,4 @@ async function deleteAccount(req, res) {
   res.json({ success: true, message: "Account deleted successfully" });
 }
 
-module.exports = { listUsers, searchUsers, markPresenceOnline, updateProfile, deleteAccount };
+module.exports = { listUsers, searchUsers, markPresenceOnline, updateTypingStatus, getTypingStatus, updateProfile, deleteAccount };

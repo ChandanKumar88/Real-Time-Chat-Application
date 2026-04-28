@@ -10,6 +10,8 @@ const MESSAGES_POLL_INTERVAL_MS = 3000;
 const PRESENCE_PING_INTERVAL_MS = 20000;
 const TYPING_STOP_DELAY_MS = 1200;
 const TYPING_STALE_MS = 4000;
+const TYPING_POLL_INTERVAL_MS = 1000;
+const TYPING_HTTP_THROTTLE_MS = 1500;
 
 export function ChatProvider({ children }) {
   const { user } = useAuth();
@@ -22,6 +24,7 @@ export function ChatProvider({ children }) {
   const onlineUserIdsRef = useRef(new Set());
   const typingStopTimersRef = useRef({});
   const typingStaleTimersRef = useRef({});
+  const typingHttpSentAtRef = useRef({});
 
   useEffect(() => {
     selectedUserRef.current = selectedUser;
@@ -149,6 +152,24 @@ export function ChatProvider({ children }) {
     return () => window.clearInterval(intervalId);
   }, [user, selectedUser]);
 
+  useEffect(() => {
+    if (!user || !selectedUser) return;
+
+    const intervalId = window.setInterval(async () => {
+      try {
+        const activeUserId = selectedUserRef.current?._id;
+        if (!activeUserId) return;
+
+        const { data } = await api.get(`/users/typing/${activeUserId}`);
+        setTypingUsers((prev) => ({ ...prev, [activeUserId]: Boolean(data.data?.isTyping) }));
+      } catch {
+        // Socket typing may still work; keep this fallback quiet.
+      }
+    }, TYPING_POLL_INTERVAL_MS);
+
+    return () => window.clearInterval(intervalId);
+  }, [user, selectedUser]);
+
   async function loadUsers() {
     const { data } = await api.get("/users");
     setUsers(data.data.map((u) => ({ ...u, isOnline: Boolean(u.isOnline) || onlineUserIdsRef.current.has(u._id) })));
@@ -202,20 +223,29 @@ export function ChatProvider({ children }) {
   }
 
   function emitTyping(receiverId) {
-    if (!receiverId || !socket || !user?._id) return;
+    if (!receiverId || !user?._id) return;
 
-    socket.emit("typing:start", { senderId: user._id, receiverId });
+    socket?.emit("typing:start", { senderId: user._id, receiverId });
+    const now = Date.now();
+    if (!typingHttpSentAtRef.current[receiverId] || now - typingHttpSentAtRef.current[receiverId] > TYPING_HTTP_THROTTLE_MS) {
+      typingHttpSentAtRef.current[receiverId] = now;
+      api.patch("/users/typing", { receiverId, isTyping: true }).catch(() => null);
+    }
     window.clearTimeout(typingStopTimersRef.current[receiverId]);
     typingStopTimersRef.current[receiverId] = window.setTimeout(() => {
-      socket.emit("typing:stop", { senderId: user._id, receiverId });
+      socket?.emit("typing:stop", { senderId: user._id, receiverId });
+      api.patch("/users/typing", { receiverId, isTyping: false }).catch(() => null);
+      typingHttpSentAtRef.current[receiverId] = 0;
     }, TYPING_STOP_DELAY_MS);
   }
 
   function stopTyping(receiverId) {
-    if (!receiverId || !socket || !user?._id) return;
+    if (!receiverId || !user?._id) return;
 
     window.clearTimeout(typingStopTimersRef.current[receiverId]);
-    socket.emit("typing:stop", { senderId: user._id, receiverId });
+    socket?.emit("typing:stop", { senderId: user._id, receiverId });
+    api.patch("/users/typing", { receiverId, isTyping: false }).catch(() => null);
+    typingHttpSentAtRef.current[receiverId] = 0;
   }
 
   const value = useMemo(
