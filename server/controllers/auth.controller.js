@@ -1,8 +1,14 @@
 const bcrypt = require("bcryptjs");
+const crypto = require("crypto");
 const User = require("../models/User");
+const PendingSignup = require("../models/PendingSignup");
 const { generateToken } = require("../utils/token");
 const { cloudinary } = require("../config/cloudinary");
 const { verifyGoogleIdToken } = require("../utils/googleAuth");
+const { sendSignupOtpEmail } = require("../utils/email");
+
+const OTP_EXPIRY_MINUTES = 10;
+const OTP_MAX_ATTEMPTS = 5;
 
 function serializeUser(user) {
   return {
@@ -14,6 +20,10 @@ function serializeUser(user) {
     isOnline: user.isOnline,
     authProvider: user.authProvider,
   };
+}
+
+function generateOtp() {
+  return crypto.randomInt(100000, 1000000).toString();
 }
 
 async function signup(req, res) {
@@ -32,26 +42,94 @@ async function signup(req, res) {
   }
 
   const hashed = await bcrypt.hash(password, 10);
+  const otp = generateOtp();
+  const otpHash = await bcrypt.hash(otp, 10);
+  const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
+
+  await sendSignupOtpEmail({ to: normalizedEmail, otp });
+  await PendingSignup.findOneAndUpdate(
+    { email: normalizedEmail },
+    {
+      fullName,
+      email: normalizedEmail,
+      password: hashed,
+      bio: bio || "",
+      profilePic: profilePic || "",
+      otpHash,
+      attempts: 0,
+      expiresAt,
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
+
+  return res.status(200).json({
+    success: true,
+    message: "OTP sent to your email",
+    data: {
+      email: normalizedEmail,
+      expiresInMinutes: OTP_EXPIRY_MINUTES,
+    },
+  });
+}
+
+async function verifySignupOtp(req, res) {
+  const { email, otp } = req.body;
+  const normalizedEmail = email?.toLowerCase();
+
+  if (!normalizedEmail || !otp) {
+    return res.status(400).json({ success: false, message: "Email and OTP are required" });
+  }
+  if (!/^\d{6}$/.test(String(otp))) {
+    return res.status(400).json({ success: false, message: "OTP must be 6 digits" });
+  }
+
+  const pendingSignup = await PendingSignup.findOne({ email: normalizedEmail });
+  if (!pendingSignup) {
+    return res.status(404).json({ success: false, message: "OTP expired or signup request not found" });
+  }
+  if (pendingSignup.expiresAt < new Date()) {
+    await PendingSignup.deleteOne({ _id: pendingSignup._id });
+    return res.status(410).json({ success: false, message: "OTP expired. Please sign up again" });
+  }
+  if (pendingSignup.attempts >= OTP_MAX_ATTEMPTS) {
+    await PendingSignup.deleteOne({ _id: pendingSignup._id });
+    return res.status(429).json({ success: false, message: "Too many incorrect attempts. Please sign up again" });
+  }
+
+  const isOtpValid = await bcrypt.compare(String(otp), pendingSignup.otpHash);
+  if (!isOtpValid) {
+    pendingSignup.attempts += 1;
+    await pendingSignup.save();
+    return res.status(401).json({ success: false, message: "Invalid OTP" });
+  }
+
+  const existing = await User.findOne({ email: normalizedEmail });
+  if (existing) {
+    await PendingSignup.deleteOne({ _id: pendingSignup._id });
+    return res.status(409).json({ success: false, message: "Email already in use" });
+  }
+
   let uploadedProfilePic = "";
 
-  if (profilePic) {
-    const uploadResult = await cloudinary.uploader.upload(profilePic, {
+  if (pendingSignup.profilePic) {
+    const uploadResult = await cloudinary.uploader.upload(pendingSignup.profilePic, {
       folder: "chat-app/profiles",
     });
     uploadedProfilePic = uploadResult.secure_url;
   }
 
   const user = await User.create({
-    fullName,
+    fullName: pendingSignup.fullName,
     email: normalizedEmail,
-    password: hashed,
-    bio: bio || "",
+    password: pendingSignup.password,
+    bio: pendingSignup.bio || "",
     profilePic: uploadedProfilePic,
   });
+  await PendingSignup.deleteOne({ _id: pendingSignup._id });
 
   return res.status(201).json({
     success: true,
-    message: "Signup successful",
+    message: "Signup verified successfully",
     data: {
       token: generateToken(user),
       user: serializeUser(user),
@@ -147,4 +225,4 @@ async function me(req, res) {
   return res.json({ success: true, data: user });
 }
 
-module.exports = { signup, login, googleLogin, me };
+module.exports = { signup, verifySignupOtp, login, googleLogin, me };

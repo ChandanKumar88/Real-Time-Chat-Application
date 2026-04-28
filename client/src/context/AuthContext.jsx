@@ -26,6 +26,11 @@ export function AuthProvider({ children }) {
 
   async function signup(payload) {
     const { data } = await api.post("/auth/signup", payload);
+    return data;
+  }
+
+  async function verifySignupOtp(payload) {
+    const { data } = await api.post("/auth/signup/verify", payload);
     localStorage.setItem("chat_token", data.data.token);
     setUser(data.data.user);
     return data;
@@ -50,7 +55,10 @@ export function AuthProvider({ children }) {
     setUser(null);
   }
 
-  const value = useMemo(() => ({ user, loading, login, signup, googleLogin, logout, setUser }), [user, loading]);
+  const value = useMemo(
+    () => ({ user, loading, login, signup, verifySignupOtp, googleLogin, logout, setUser }),
+    [user, loading]
+  );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
