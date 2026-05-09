@@ -18,6 +18,7 @@ function serializeUser(user) {
     bio: user.bio,
     profilePic: user.profilePic,
     publicKey: user.publicKey,
+    encryptionKeyBackup: user.encryptionKeyBackup,
     isOnline: user.isOnline,
     authProvider: user.authProvider,
   };

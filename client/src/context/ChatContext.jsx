@@ -1,8 +1,8 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { api } from "../services/api";
 import { useAuth } from "./AuthContext";
-import { decryptText, encryptText, ensureLocalKeyPair } from "../utils/e2ee";
+import { decryptText, encryptText, ensureLocalKeyPair, getLocalKeyPair } from "../utils/e2ee";
 
 const ChatContext = createContext(null);
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || "http://localhost:5000";
@@ -22,17 +22,51 @@ export function ChatProvider({ children }) {
   const [socket, setSocket] = useState(null);
   const [typingUsers, setTypingUsers] = useState({});
   const selectedUserRef = useRef(null);
+  const usersRef = useRef([]);
   const onlineUserIdsRef = useRef(new Set());
   const typingStopTimersRef = useRef({});
   const typingStaleTimersRef = useRef({});
   const typingHttpSentAtRef = useRef({});
+
+  const decryptMessage = useCallback(
+    async (message, peerUser = selectedUserRef.current) => {
+      if (!message?.encryptedPayload || !user?._id) return message;
+
+      const senderId = message.senderId?.toString?.() || message.senderId;
+      const receiverId = message.receiverId?.toString?.() || message.receiverId;
+      const peerId = senderId === user._id ? receiverId : senderId;
+      const freshPeer = usersRef.current.find((u) => u._id === peerId);
+      const text = await decryptText({
+        encryptedPayload: message.encryptedPayload,
+        myUserId: user._id,
+        peerPublicKey: freshPeer?.publicKey || peerUser?.publicKey,
+      });
+
+      if (text === null) {
+        return { ...message, text: "", decryptionFailed: true };
+      }
+
+      return { ...message, text, decryptionFailed: false };
+    },
+    [user?._id]
+  );
+
+  const decryptMessages = useCallback(
+    async (rawMessages, peerUser = selectedUserRef.current) =>
+      Promise.all((rawMessages || []).map((message) => decryptMessage(message, peerUser))),
+    [decryptMessage]
+  );
 
   useEffect(() => {
     async function publishEncryptionKey() {
       if (!user?._id) return;
 
       try {
-        const localKeyPair = await ensureLocalKeyPair(user._id);
+        const savedKeyPair = getLocalKeyPair(user._id);
+        if (user.publicKey && savedKeyPair?.publicKey !== user.publicKey) return;
+
+        const localKeyPair = savedKeyPair || (user.publicKey ? null : await ensureLocalKeyPair(user._id));
+        if (!localKeyPair) return;
         if (user.publicKey === localKeyPair.publicKey) return;
 
         const { data } = await api.patch("/users/encryption-key", { publicKey: localKeyPair.publicKey });
@@ -48,6 +82,10 @@ export function ChatProvider({ children }) {
   useEffect(() => {
     selectedUserRef.current = selectedUser;
   }, [selectedUser]);
+
+  useEffect(() => {
+    usersRef.current = users;
+  }, [users]);
 
   useEffect(() => {
     if (!selectedUser) return;
@@ -103,7 +141,13 @@ export function ChatProvider({ children }) {
       );
     });
     s.on("message:seen", (seenMessage) => {
-      setMessages((prev) => prev.map((m) => (m._id === seenMessage._id ? seenMessage : m)));
+      decryptMessage(seenMessage, selectedUserRef.current).then((decryptedMessage) => {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m._id === seenMessage._id ? { ...decryptedMessage, text: m.text || decryptedMessage.text } : m
+          )
+        );
+      });
     });
     s.on("message:deleted", ({ messageId }) => {
       setMessages((prev) => prev.filter((m) => m._id !== messageId));
@@ -137,7 +181,7 @@ export function ChatProvider({ children }) {
       Object.values(typingStaleTimers).forEach(window.clearTimeout);
       s.disconnect();
     };
-  }, [user]);
+  }, [user, decryptMessage]);
 
   useEffect(() => {
     if (!user) return;
@@ -173,7 +217,7 @@ export function ChatProvider({ children }) {
     }, MESSAGES_POLL_INTERVAL_MS);
 
     return () => window.clearInterval(intervalId);
-  }, [user, selectedUser]);
+  }, [user, selectedUser, decryptMessages]);
 
   useEffect(() => {
     if (!user || !selectedUser) return;
@@ -212,24 +256,13 @@ export function ChatProvider({ children }) {
     return decryptedMessages;
   }
 
-  async function decryptMessage(message, peerUser = selectedUserRef.current) {
-    if (!message?.encryptedPayload) return message;
-
-    const text = await decryptText({
-      encryptedPayload: message.encryptedPayload,
-      myUserId: user._id,
-      peerPublicKey: peerUser?.publicKey,
-    });
-
-    return { ...message, text };
-  }
-
-  async function decryptMessages(rawMessages, peerUser = selectedUserRef.current) {
-    return Promise.all((rawMessages || []).map((message) => decryptMessage(message, peerUser)));
-  }
-
   async function sendMessage(targetUserId, payload) {
     const targetUser = users.find((u) => u._id === targetUserId) || selectedUserRef.current;
+    const localKeyPair = getLocalKeyPair(user._id);
+    if (payload.text && user.publicKey && localKeyPair?.publicKey !== user.publicKey) {
+      throw new Error("Encrypted chat key backup original browser se create karo.");
+    }
+
     const encryptedPayload = payload.text
       ? await encryptText({ text: payload.text, myUserId: user._id, peerPublicKey: targetUser?.publicKey })
       : "";

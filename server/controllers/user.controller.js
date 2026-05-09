@@ -13,7 +13,9 @@ function isRecentlyOnline(user) {
 }
 
 async function listUsers(req, res) {
-  const users = await User.find({ _id: { $ne: req.user.id } }).select("-password").sort({ isOnline: -1, fullName: 1 });
+  const users = await User.find({ _id: { $ne: req.user.id } })
+    .select("-password -encryptionKeyBackup")
+    .sort({ isOnline: -1, fullName: 1 });
   const onlineIds = new Set(getOnlineUserIds());
   const unreadAgg = await Message.aggregate([
     { $match: { receiverId: new mongoose.Types.ObjectId(req.user.id), seen: false } },
@@ -42,7 +44,7 @@ async function searchUsers(req, res) {
     _id: { $ne: req.user.id },
     $or: [{ fullName: regex }, { email: regex }],
   })
-    .select("-password")
+    .select("-password -encryptionKeyBackup")
     .limit(20);
   const onlineIds = new Set(getOnlineUserIds());
   res.json({
@@ -60,7 +62,7 @@ async function markPresenceOnline(req, res) {
 }
 
 async function updateEncryptionKey(req, res) {
-  const { publicKey } = req.body;
+  const { publicKey, encryptionKeyBackup } = req.body;
 
   if (!publicKey || typeof publicKey !== "string") {
     return res.status(400).json({ success: false, message: "Public key is required" });
@@ -71,11 +73,20 @@ async function updateEncryptionKey(req, res) {
     if (parsed.kty !== "EC" || parsed.crv !== "P-256" || !parsed.x || !parsed.y) {
       return res.status(400).json({ success: false, message: "Invalid public key" });
     }
-  } catch (_error) {
+  } catch {
     return res.status(400).json({ success: false, message: "Invalid public key format" });
   }
 
-  const user = await User.findByIdAndUpdate(req.user.id, { publicKey }, { new: true }).select("-password");
+  if (encryptionKeyBackup !== undefined && typeof encryptionKeyBackup !== "string") {
+    return res.status(400).json({ success: false, message: "Invalid encryption key backup" });
+  }
+
+  const updates = { publicKey };
+  if (encryptionKeyBackup !== undefined) {
+    updates.encryptionKeyBackup = encryptionKeyBackup;
+  }
+
+  const user = await User.findByIdAndUpdate(req.user.id, updates, { new: true }).select("-password");
   res.json({ success: true, data: user });
 }
 

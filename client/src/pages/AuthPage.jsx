@@ -115,12 +115,16 @@ export default function AuthPage({ mode = "login" }) {
     if (showOtpStep) {
       try {
         setAuthBusy(true);
-        await verifySignupOtp({ email: otpSentTo, otp });
+        const result = await verifySignupOtp({ email: otpSentTo, otp, password: form.password });
         toast.success("Account verified");
+        if (result.data.user.encryptionRecoveryRequired) {
+          toast.error("Encrypted chat backup original browser se create karo.");
+        }
         navigate("/");
       } catch (error) {
         const message =
           error.response?.data?.message ||
+          error.message ||
           (error.request ? "Backend server se connection nahi ho pa raha" : "OTP verification failed");
         toast.error(message);
       } finally {
@@ -141,13 +145,17 @@ export default function AuthPage({ mode = "login" }) {
         setOtp("");
         toast.success("OTP sent to your email");
       } else {
-        await login(form);
+        const result = await login(form);
         toast.success("Welcome back");
+        if (result.data.user.encryptionRecoveryRequired) {
+          toast.error("Encrypted chat backup original browser se create karo.");
+        }
         navigate("/");
       }
     } catch (error) {
       const message =
         error.response?.data?.message ||
+        error.message ||
         (error.request ? "Backend server se connection nahi ho pa raha" : "Authentication failed");
       toast.error(message);
     } finally {

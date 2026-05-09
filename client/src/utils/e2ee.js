@@ -1,6 +1,8 @@
 const KEY_ALGORITHM = { name: "ECDH", namedCurve: "P-256" };
 const STORAGE_PREFIX = "quickchat_e2ee_keypair_";
 const ENCRYPTION_VERSION = 1;
+const BACKUP_VERSION = 1;
+const BACKUP_ITERATIONS = 250000;
 
 function getStorageKey(userId) {
   return `${STORAGE_PREFIX}${userId}`;
@@ -24,6 +26,29 @@ function base64ToArrayBuffer(value) {
   return bytes.buffer;
 }
 
+function stringToArrayBuffer(value) {
+  return new TextEncoder().encode(value);
+}
+
+function arrayBufferToString(buffer) {
+  return new TextDecoder().decode(buffer);
+}
+
+function saveLocalKeyPair(userId, keyPair) {
+  localStorage.setItem(getStorageKey(userId), JSON.stringify(keyPair));
+}
+
+export function getLocalKeyPair(userId) {
+  if (!userId) return null;
+
+  try {
+    const saved = localStorage.getItem(getStorageKey(userId));
+    return saved ? JSON.parse(saved) : null;
+  } catch {
+    return null;
+  }
+}
+
 async function importPrivateKey(privateJwk) {
   return crypto.subtle.importKey("jwk", privateJwk, KEY_ALGORITHM, false, ["deriveKey"]);
 }
@@ -42,16 +67,67 @@ async function deriveConversationKey(privateKey, peerPublicKey) {
   );
 }
 
+async function deriveBackupKey(password, saltBuffer) {
+  const passwordKey = await crypto.subtle.importKey("raw", stringToArrayBuffer(password), "PBKDF2", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey(
+    {
+      name: "PBKDF2",
+      salt: saltBuffer,
+      iterations: BACKUP_ITERATIONS,
+      hash: "SHA-256",
+    },
+    passwordKey,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  );
+}
+
+async function createEncryptedKeyBackup(privateJwk, password) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const backupKey = await deriveBackupKey(password, salt);
+  const encryptedPrivateKey = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    backupKey,
+    stringToArrayBuffer(JSON.stringify(privateJwk))
+  );
+
+  return JSON.stringify({
+    v: BACKUP_VERSION,
+    alg: "PBKDF2-SHA256-AESGCM",
+    iterations: BACKUP_ITERATIONS,
+    salt: arrayBufferToBase64(salt),
+    iv: arrayBufferToBase64(iv),
+    data: arrayBufferToBase64(encryptedPrivateKey),
+  });
+}
+
+async function decryptKeyBackup(encryptionKeyBackup, password) {
+  const backup = JSON.parse(encryptionKeyBackup);
+  if (backup.v !== BACKUP_VERSION || backup.alg !== "PBKDF2-SHA256-AESGCM") {
+    throw new Error("Unsupported encrypted chat backup");
+  }
+
+  const salt = base64ToArrayBuffer(backup.salt);
+  const iv = base64ToArrayBuffer(backup.iv);
+  const backupKey = await deriveBackupKey(password, salt);
+  const privateKeyJson = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: new Uint8Array(iv) },
+    backupKey,
+    base64ToArrayBuffer(backup.data)
+  );
+
+  return JSON.parse(arrayBufferToString(privateKeyJson));
+}
+
 export async function ensureLocalKeyPair(userId) {
   if (!window.crypto?.subtle) {
     throw new Error("This browser does not support secure encryption");
   }
 
-  const storageKey = getStorageKey(userId);
-  const saved = localStorage.getItem(storageKey);
-  if (saved) {
-    return JSON.parse(saved);
-  }
+  const saved = getLocalKeyPair(userId);
+  if (saved) return saved;
 
   const keyPair = await crypto.subtle.generateKey(KEY_ALGORITHM, true, ["deriveKey"]);
   const publicJwk = await crypto.subtle.exportKey("jwk", keyPair.publicKey);
@@ -61,8 +137,49 @@ export async function ensureLocalKeyPair(userId) {
     privateJwk,
   };
 
-  localStorage.setItem(storageKey, JSON.stringify(storedKeyPair));
+  saveLocalKeyPair(userId, storedKeyPair);
   return storedKeyPair;
+}
+
+export async function ensureRecoverableKeyPair({ userId, password, publicKey, encryptionKeyBackup }) {
+  if (!password) {
+    return { keyPair: await ensureLocalKeyPair(userId), encryptionKeyBackup: encryptionKeyBackup || "", shouldSync: false };
+  }
+
+  if (publicKey && encryptionKeyBackup) {
+    const localKeyPair = getLocalKeyPair(userId);
+    if (localKeyPair?.publicKey === publicKey) {
+      return { keyPair: localKeyPair, encryptionKeyBackup, shouldSync: false };
+    }
+
+    const privateJwk = await decryptKeyBackup(encryptionKeyBackup, password);
+    const restoredKeyPair = { publicKey, privateJwk };
+    saveLocalKeyPair(userId, restoredKeyPair);
+    return { keyPair: restoredKeyPair, encryptionKeyBackup, shouldSync: false };
+  }
+
+  if (publicKey) {
+    const localKeyPair = getLocalKeyPair(userId);
+    if (localKeyPair?.publicKey !== publicKey) {
+      throw new Error("Encrypted chat key is missing on this device");
+    }
+
+    const backup = await createEncryptedKeyBackup(localKeyPair.privateJwk, password);
+    return {
+      keyPair: localKeyPair,
+      encryptionKeyBackup: backup,
+      shouldSync: true,
+    };
+  }
+
+  const activeKeyPair = await ensureLocalKeyPair(userId);
+  const backup = await createEncryptedKeyBackup(activeKeyPair.privateJwk, password);
+
+  return {
+    keyPair: activeKeyPair,
+    encryptionKeyBackup: backup,
+    shouldSync: activeKeyPair.publicKey !== publicKey || backup !== encryptionKeyBackup,
+  };
 }
 
 export async function encryptText({ text, myUserId, peerPublicKey }) {
@@ -90,7 +207,7 @@ export async function encryptText({ text, myUserId, peerPublicKey }) {
 export async function decryptText({ encryptedPayload, myUserId, peerPublicKey }) {
   if (!encryptedPayload) return "";
   if (!peerPublicKey) {
-    return "[Encrypted message - key unavailable]";
+    return null;
   }
 
   try {
@@ -107,6 +224,6 @@ export async function decryptText({ encryptedPayload, myUserId, peerPublicKey })
 
     return new TextDecoder().decode(plaintext);
   } catch {
-    return "[Encrypted message - unable to decrypt on this device]";
+    return null;
   }
 }

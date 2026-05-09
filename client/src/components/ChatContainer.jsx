@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { FiGrid, FiImage, FiSend, FiTrash2, FiX } from "react-icons/fi";
+import { FiGrid, FiImage, FiLock, FiSend, FiTrash2, FiX } from "react-icons/fi";
 import logoIcon from "../assets/logo_icon.svg";
 import ProfileAvatar from "./ProfileAvatar";
 import { processImageFile } from "../utils/image";
@@ -98,6 +98,20 @@ export default function ChatContainer({
             <div key={m._id} className={`flex ${isMine ? "justify-end" : "justify-start"}`}>
               <div className={`flex max-w-[92%] flex-col sm:max-w-[82%] ${isMine ? "items-end" : "items-start"}`}>
                 <div className={`max-w-full rounded-2xl px-2.5 py-2 sm:px-3 ${isMine ? "bg-violet-600 text-white" : isDark ? "bg-white/10 text-slate-100" : "bg-slate-100 text-slate-800"}`}>
+                  {m.decryptionFailed && (
+                    <div
+                      className={`flex max-w-[min(70vw,360px)] items-center gap-2 rounded-xl px-2.5 py-2 text-xs sm:text-sm ${
+                        isMine
+                          ? "bg-black/15 text-white/90"
+                          : isDark
+                            ? "bg-black/25 text-slate-200"
+                            : "bg-white/80 text-slate-700"
+                      }`}
+                    >
+                      <FiLock className="h-4 w-4 shrink-0" />
+                      <span className="break-words">Message can't be opened on this device.</span>
+                    </div>
+                  )}
                   {!!m.text && <p className="break-words text-sm">{m.text}</p>}
                   {!!m.image && (
                     <div

@@ -10,6 +10,7 @@ const userSchema = new mongoose.Schema(
     bio: { type: String, default: "" },
     profilePic: { type: String, default: "" },
     publicKey: { type: String, default: "" },
+    encryptionKeyBackup: { type: String, default: "" },
     isOnline: { type: Boolean, default: false },
     lastSeen: { type: Date, default: null },
   },
