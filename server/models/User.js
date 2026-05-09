@@ -9,6 +9,7 @@ const userSchema = new mongoose.Schema(
     authProvider: { type: String, enum: ["local", "google"], default: "local" },
     bio: { type: String, default: "" },
     profilePic: { type: String, default: "" },
+    publicKey: { type: String, default: "" },
     isOnline: { type: Boolean, default: false },
     lastSeen: { type: Date, default: null },
   },

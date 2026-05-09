@@ -161,7 +161,7 @@ export default function HomePage() {
       return "Video upload fail hua. Vercel deploy par video ko chhota rakho, warna body size limit hit hoti hai.";
     }
 
-    return serverMessage || "Failed to send media";
+    return serverMessage || error?.message || "Failed to send media";
   }
 
   const isPortraitPreviewVideo = previewMedia?.type === "video" && previewVideoRatio && previewVideoRatio < 1;

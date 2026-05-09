@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import { io } from "socket.io-client";
 import { api } from "../services/api";
 import { useAuth } from "./AuthContext";
+import { decryptText, encryptText, ensureLocalKeyPair } from "../utils/e2ee";
 
 const ChatContext = createContext(null);
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || "http://localhost:5000";
@@ -14,7 +15,7 @@ const TYPING_POLL_INTERVAL_MS = 1000;
 const TYPING_HTTP_THROTTLE_MS = 1500;
 
 export function ChatProvider({ children }) {
-  const { user } = useAuth();
+  const { user, setUser } = useAuth();
   const [users, setUsers] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -25,6 +26,24 @@ export function ChatProvider({ children }) {
   const typingStopTimersRef = useRef({});
   const typingStaleTimersRef = useRef({});
   const typingHttpSentAtRef = useRef({});
+
+  useEffect(() => {
+    async function publishEncryptionKey() {
+      if (!user?._id) return;
+
+      try {
+        const localKeyPair = await ensureLocalKeyPair(user._id);
+        if (user.publicKey === localKeyPair.publicKey) return;
+
+        const { data } = await api.patch("/users/encryption-key", { publicKey: localKeyPair.publicKey });
+        setUser(data.data);
+      } catch {
+        // Without a key, new encrypted messages will be blocked instead of sent as plaintext.
+      }
+    }
+
+    publishEncryptionKey();
+  }, [setUser, user?._id, user?.publicKey]);
 
   useEffect(() => {
     selectedUserRef.current = selectedUser;
@@ -42,7 +61,8 @@ export function ChatProvider({ children }) {
         prev.isOnline === freshSelectedUser.isOnline &&
         prev.fullName === freshSelectedUser.fullName &&
         prev.profilePic === freshSelectedUser.profilePic &&
-        prev.bio === freshSelectedUser.bio
+        prev.bio === freshSelectedUser.bio &&
+        prev.publicKey === freshSelectedUser.publicKey
       ) {
         return prev;
       }
@@ -72,7 +92,9 @@ export function ChatProvider({ children }) {
     });
     s.on("message:new", (message) => {
       if (selectedUserRef.current && message.senderId === selectedUserRef.current._id) {
-        setMessages((prev) => [...prev, message]);
+        decryptMessage(message, selectedUserRef.current).then((decryptedMessage) => {
+          setMessages((prev) => [...prev, decryptedMessage]);
+        });
         setUsers((prev) => prev.map((u) => (u._id === message.senderId ? { ...u, unreadCount: 0 } : u)));
         return;
       }
@@ -136,8 +158,9 @@ export function ChatProvider({ children }) {
         if (!activeUserId) return;
 
         const { data } = await api.get(`/messages/${activeUserId}`);
+        const decryptedMessages = await decryptMessages(data.data || [], selectedUserRef.current);
         setMessages((prev) => {
-          const nextMessages = data.data || [];
+          const nextMessages = decryptedMessages;
           if (JSON.stringify(prev) === JSON.stringify(nextMessages)) {
             return prev;
           }
@@ -182,18 +205,43 @@ export function ChatProvider({ children }) {
     }
 
     const { data } = await api.get(`/messages/${userId}`);
-    setMessages(data.data);
+    const peerUser = users.find((u) => u._id === userId) || selectedUserRef.current;
+    const decryptedMessages = await decryptMessages(data.data, peerUser);
+    setMessages(decryptedMessages);
     setUsers((prev) => prev.map((u) => (u._id === userId ? { ...u, unreadCount: 0 } : u)));
-    return data.data;
+    return decryptedMessages;
+  }
+
+  async function decryptMessage(message, peerUser = selectedUserRef.current) {
+    if (!message?.encryptedPayload) return message;
+
+    const text = await decryptText({
+      encryptedPayload: message.encryptedPayload,
+      myUserId: user._id,
+      peerPublicKey: peerUser?.publicKey,
+    });
+
+    return { ...message, text };
+  }
+
+  async function decryptMessages(rawMessages, peerUser = selectedUserRef.current) {
+    return Promise.all((rawMessages || []).map((message) => decryptMessage(message, peerUser)));
   }
 
   async function sendMessage(targetUserId, payload) {
+    const targetUser = users.find((u) => u._id === targetUserId) || selectedUserRef.current;
+    const encryptedPayload = payload.text
+      ? await encryptText({ text: payload.text, myUserId: user._id, peerPublicKey: targetUser?.publicKey })
+      : "";
     const tempId = `temp-${Date.now()}`;
     const optimisticMessage = {
       _id: tempId,
       senderId: user._id,
       receiverId: targetUserId,
       text: payload.text || "",
+      encryptedPayload,
+      encrypted: Boolean(encryptedPayload),
+      encryptionVersion: encryptedPayload ? 1 : 0,
       image: payload.image || "",
       video: payload.video || "",
       seen: false,
@@ -204,9 +252,10 @@ export function ChatProvider({ children }) {
     setMessages((prev) => [...prev, optimisticMessage]);
 
     try {
-      const { data } = await api.post(`/messages/${targetUserId}`, payload);
-      setMessages((prev) => prev.map((m) => (m._id === tempId ? data.data : m)));
-      return data.data;
+      const { data } = await api.post(`/messages/${targetUserId}`, { ...payload, text: "", encryptedPayload });
+      const decryptedMessage = await decryptMessage(data.data, targetUser);
+      setMessages((prev) => prev.map((m) => (m._id === tempId ? { ...decryptedMessage, text: payload.text || decryptedMessage.text } : m)));
+      return decryptedMessage;
     } catch (error) {
       setMessages((prev) => prev.filter((m) => m._id !== tempId));
       throw error;

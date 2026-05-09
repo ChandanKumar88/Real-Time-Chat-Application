@@ -18,9 +18,16 @@ const allowedOrigins = (process.env.CLIENT_URL || "")
   .split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
+const devOrigins = new Set([
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "http://localhost:4173",
+  "http://127.0.0.1:4173",
+]);
 
 function isAllowedOrigin(origin) {
   if (!origin) return true;
+  if (devOrigins.has(origin)) return true;
   if (allowedOrigins.length === 0) return true;
   return allowedOrigins.includes(origin);
 }

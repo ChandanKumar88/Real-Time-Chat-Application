@@ -59,6 +59,26 @@ async function markPresenceOnline(req, res) {
   res.json({ success: true });
 }
 
+async function updateEncryptionKey(req, res) {
+  const { publicKey } = req.body;
+
+  if (!publicKey || typeof publicKey !== "string") {
+    return res.status(400).json({ success: false, message: "Public key is required" });
+  }
+
+  try {
+    const parsed = JSON.parse(publicKey);
+    if (parsed.kty !== "EC" || parsed.crv !== "P-256" || !parsed.x || !parsed.y) {
+      return res.status(400).json({ success: false, message: "Invalid public key" });
+    }
+  } catch (_error) {
+    return res.status(400).json({ success: false, message: "Invalid public key format" });
+  }
+
+  const user = await User.findByIdAndUpdate(req.user.id, { publicKey }, { new: true }).select("-password");
+  res.json({ success: true, data: user });
+}
+
 async function updateTypingStatus(req, res) {
   const { receiverId, isTyping } = req.body;
 
@@ -140,4 +160,13 @@ async function deleteAccount(req, res) {
   res.json({ success: true, message: "Account deleted successfully" });
 }
 
-module.exports = { listUsers, searchUsers, markPresenceOnline, updateTypingStatus, getTypingStatus, updateProfile, deleteAccount };
+module.exports = {
+  listUsers,
+  searchUsers,
+  markPresenceOnline,
+  updateEncryptionKey,
+  updateTypingStatus,
+  getTypingStatus,
+  updateProfile,
+  deleteAccount,
+};

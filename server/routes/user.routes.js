@@ -4,6 +4,7 @@ const {
   listUsers,
   searchUsers,
   markPresenceOnline,
+  updateEncryptionKey,
   updateTypingStatus,
   getTypingStatus,
   updateProfile,
@@ -16,6 +17,7 @@ router.use(protect);
 router.get("/", listUsers);
 router.get("/search", searchUsers);
 router.patch("/presence/online", markPresenceOnline);
+router.patch("/encryption-key", updateEncryptionKey);
 router.patch("/typing", updateTypingStatus);
 router.get("/typing/:userId", getTypingStatus);
 router.put("/profile", updateProfile);

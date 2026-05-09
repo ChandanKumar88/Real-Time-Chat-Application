@@ -24,10 +24,11 @@ async function getConversation(req, res) {
 async function sendMessage(req, res) {
   const { userId } = req.params;
   const text = req.body.text?.trim?.() || "";
+  const encryptedPayload = req.body.encryptedPayload?.trim?.() || "";
   const image = req.body.image || "";
   const video = req.body.video || "";
 
-  if (!text && !image && !video) {
+  if (!text && !encryptedPayload && !image && !video) {
     return res.status(400).json({ success: false, message: "Message cannot be empty" });
   }
 
@@ -51,7 +52,10 @@ async function sendMessage(req, res) {
   const message = await Message.create({
     senderId: req.user.id,
     receiverId: userId,
-    text,
+    text: encryptedPayload ? "" : text,
+    encryptedPayload,
+    encrypted: Boolean(encryptedPayload),
+    encryptionVersion: encryptedPayload ? 1 : 0,
     image: imageUrl,
     video: videoUrl,
   });
