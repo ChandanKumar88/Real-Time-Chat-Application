@@ -1,12 +1,30 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { FiChevronLeft, FiChevronRight, FiDownload, FiMenu, FiMinus, FiPlus, FiRotateCcw, FiShare2, FiX } from "react-icons/fi";
+import {
+  FiChevronLeft,
+  FiChevronRight,
+  FiDownload,
+  FiMenu,
+  FiMic,
+  FiMicOff,
+  FiMinus,
+  FiPhone,
+  FiPhoneOff,
+  FiPlus,
+  FiRotateCcw,
+  FiShare2,
+  FiX,
+} from "react-icons/fi";
 import { useAuth } from "../context/AuthContext";
 import { useChat } from "../context/ChatContext";
 import Sidebar from "../components/Sidebar";
 import ChatContainer from "../components/ChatContainer";
 import RightSidebar from "../components/RightSidebar";
 import bgImage from "../assets/bgImage.svg";
+
+const CALL_ICE_SERVERS = [
+  { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] },
+];
 
 export default function HomePage() {
   const { user, logout, setupEncryptionPassphrase } = useAuth();
@@ -20,6 +38,7 @@ export default function HomePage() {
     sendMessage,
     markSeen,
     deleteMessage,
+    socket,
     typingUsers,
     emitTyping,
     stopTyping,
@@ -37,12 +56,34 @@ export default function HomePage() {
   const [previewVideoRatio, setPreviewVideoRatio] = useState(null);
   const [recoveryPassphrase, setRecoveryPassphrase] = useState("");
   const [recoveryBusy, setRecoveryBusy] = useState(false);
+  const [callState, setCallState] = useState({
+    status: "idle",
+    direction: "",
+    peer: null,
+    muted: false,
+  });
   const pinchStateRef = useRef(null);
+  const remoteAudioRef = useRef(null);
+  const peerConnectionRef = useRef(null);
+  const localStreamRef = useRef(null);
+  const pendingOfferRef = useRef(null);
+  const callPeerIdRef = useRef("");
+  const queuedIceCandidatesRef = useRef([]);
+  const callStateRef = useRef(callState);
+  const usersRef = useRef(users);
 
   useEffect(() => {
     if (user?.encryptionPassphraseRequired) return;
     loadUsers().catch(() => toast.error("Failed to load users"));
   }, [user?.encryptionPassphraseRequired]);
+
+  useEffect(() => {
+    callStateRef.current = callState;
+  }, [callState]);
+
+  useEffect(() => {
+    usersRef.current = users;
+  }, [users]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
@@ -195,6 +236,264 @@ export default function HomePage() {
     }
   }
 
+  function getCallPeer(userId, fallback = {}) {
+    return (
+      usersRef.current.find((item) => item._id === userId) ||
+      (selectedUser?._id === userId ? selectedUser : null) ||
+      fallback || {
+        _id: userId,
+        fullName: "QuickChat user",
+        profilePic: "",
+      }
+    );
+  }
+
+  function getCallerSnapshot() {
+    return {
+      _id: user._id,
+      fullName: user.fullName,
+      profilePic: user.profilePic || "",
+    };
+  }
+
+  function stopCallMedia() {
+    localStreamRef.current?.getTracks().forEach((track) => track.stop());
+    localStreamRef.current = null;
+
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.srcObject = null;
+    }
+  }
+
+  function resetCall() {
+    peerConnectionRef.current?.close();
+    peerConnectionRef.current = null;
+    pendingOfferRef.current = null;
+    callPeerIdRef.current = "";
+    queuedIceCandidatesRef.current = [];
+    stopCallMedia();
+    setCallState({ status: "idle", direction: "", peer: null, muted: false });
+  }
+
+  function notifyCallEnd() {
+    const peerId = callPeerIdRef.current;
+    if (peerId) socket?.emit("call:end", { to: peerId });
+  }
+
+  async function flushQueuedIceCandidates() {
+    const peerConnection = peerConnectionRef.current;
+    if (!peerConnection?.remoteDescription) return;
+
+    const queuedCandidates = queuedIceCandidatesRef.current;
+    queuedIceCandidatesRef.current = [];
+    await Promise.all(
+      queuedCandidates.map((candidate) => peerConnection.addIceCandidate(new RTCIceCandidate(candidate)).catch(() => null))
+    );
+  }
+
+  async function createPeerConnection(peerId) {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error("Browser microphone calling support nahi kar raha.");
+    }
+
+    const peerConnection = new RTCPeerConnection({ iceServers: CALL_ICE_SERVERS });
+    peerConnectionRef.current = peerConnection;
+
+    peerConnection.onicecandidate = (event) => {
+      if (event.candidate) {
+        socket?.emit("call:ice", { to: peerId, candidate: event.candidate });
+      }
+    };
+
+    peerConnection.ontrack = (event) => {
+      const [remoteStream] = event.streams;
+      if (!remoteStream || !remoteAudioRef.current) return;
+      remoteAudioRef.current.srcObject = remoteStream;
+      remoteAudioRef.current.play().catch(() => null);
+    };
+
+    peerConnection.onconnectionstatechange = () => {
+      if (["failed", "closed", "disconnected"].includes(peerConnection.connectionState)) {
+        if (callStateRef.current.status !== "idle") {
+          resetCall();
+        }
+      }
+    };
+
+    const localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    localStreamRef.current = localStream;
+    localStream.getTracks().forEach((track) => peerConnection.addTrack(track, localStream));
+    return peerConnection;
+  }
+
+  async function startAudioCall() {
+    if (!selectedUser) return;
+    if (!selectedUser.isOnline) {
+      toast.error("User offline hai, audio call abhi start nahi ho sakti.");
+      return;
+    }
+    if (!socket?.connected) {
+      toast.error("Socket connect nahi hai. Page refresh karke try karo.");
+      return;
+    }
+    if (callStateRef.current.status !== "idle") {
+      toast.error("Ek call already active hai.");
+      return;
+    }
+
+    try {
+      callPeerIdRef.current = selectedUser._id;
+      queuedIceCandidatesRef.current = [];
+      setCallState({ status: "calling", direction: "outgoing", peer: selectedUser, muted: false });
+
+      const peerConnection = await createPeerConnection(selectedUser._id);
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
+
+      socket.emit("call:invite", {
+        to: selectedUser._id,
+        caller: getCallerSnapshot(),
+        offer,
+      });
+    } catch (error) {
+      resetCall();
+      toast.error(error?.message || "Audio call start nahi ho pa rahi.");
+    }
+  }
+
+  async function acceptAudioCall() {
+    const peerId = callPeerIdRef.current;
+    const offer = pendingOfferRef.current;
+    if (!peerId || !offer || !socket?.connected) return;
+
+    try {
+      setCallState((prev) => ({ ...prev, status: "connecting" }));
+      const peerConnection = await createPeerConnection(peerId);
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+      await flushQueuedIceCandidates();
+
+      const answer = await peerConnection.createAnswer();
+      await peerConnection.setLocalDescription(answer);
+      socket.emit("call:accept", { to: peerId, answer });
+
+      setCallState((prev) => ({ ...prev, status: "active" }));
+      pendingOfferRef.current = null;
+    } catch (error) {
+      socket.emit("call:reject", { to: peerId, reason: "failed" });
+      resetCall();
+      toast.error(error?.message || "Call accept nahi ho pa rahi.");
+    }
+  }
+
+  function rejectAudioCall() {
+    const peerId = callPeerIdRef.current;
+    if (peerId) socket?.emit("call:reject", { to: peerId, reason: "rejected" });
+    resetCall();
+  }
+
+  function endAudioCall() {
+    notifyCallEnd();
+    resetCall();
+  }
+
+  function toggleCallMute() {
+    const nextMuted = !callStateRef.current.muted;
+    localStreamRef.current?.getAudioTracks().forEach((track) => {
+      track.enabled = !nextMuted;
+    });
+    setCallState((prev) => ({ ...prev, muted: nextMuted }));
+  }
+
+  useEffect(() => {
+    if (!socket) return;
+
+    function handleIncomingCall({ from, caller, offer }) {
+      if (!from || !offer) return;
+
+      if (callStateRef.current.status !== "idle") {
+        socket.emit("call:reject", { to: from, reason: "busy" });
+        return;
+      }
+
+      callPeerIdRef.current = from;
+      pendingOfferRef.current = offer;
+      queuedIceCandidatesRef.current = [];
+      setCallState({
+        status: "ringing",
+        direction: "incoming",
+        peer: getCallPeer(from, caller),
+        muted: false,
+      });
+    }
+
+    async function handleCallAccepted({ from, answer }) {
+      if (!from || from !== callPeerIdRef.current || !answer || !peerConnectionRef.current) return;
+
+      try {
+        await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(answer));
+        await flushQueuedIceCandidates();
+        setCallState((prev) => ({ ...prev, status: "active" }));
+      } catch {
+        resetCall();
+        toast.error("Call connect nahi ho paayi.");
+      }
+    }
+
+    async function handleRemoteIce({ from, candidate }) {
+      if (!from || from !== callPeerIdRef.current || !candidate) return;
+      const peerConnection = peerConnectionRef.current;
+
+      if (!peerConnection?.remoteDescription) {
+        queuedIceCandidatesRef.current.push(candidate);
+        return;
+      }
+
+      await peerConnection.addIceCandidate(new RTCIceCandidate(candidate)).catch(() => null);
+    }
+
+    function handleCallRejected({ reason }) {
+      const message = reason === "busy" ? "User dusri call mein busy hai." : "Audio call reject ho gayi.";
+      resetCall();
+      toast.error(message);
+    }
+
+    function handleCallEnded() {
+      if (callStateRef.current.status !== "idle") {
+        resetCall();
+        toast("Audio call ended");
+      }
+    }
+
+    function handleCallUnavailable() {
+      resetCall();
+      toast.error("User online nahi hai.");
+    }
+
+    socket.on("call:incoming", handleIncomingCall);
+    socket.on("call:accepted", handleCallAccepted);
+    socket.on("call:ice", handleRemoteIce);
+    socket.on("call:rejected", handleCallRejected);
+    socket.on("call:ended", handleCallEnded);
+    socket.on("call:unavailable", handleCallUnavailable);
+
+    return () => {
+      socket.off("call:incoming", handleIncomingCall);
+      socket.off("call:accepted", handleCallAccepted);
+      socket.off("call:ice", handleRemoteIce);
+      socket.off("call:rejected", handleCallRejected);
+      socket.off("call:ended", handleCallEnded);
+      socket.off("call:unavailable", handleCallUnavailable);
+    };
+  }, [socket, selectedUser]);
+
+  useEffect(
+    () => () => {
+      notifyCallEnd();
+      resetCall();
+    },
+    []
+  );
+
   useEffect(() => {
     if (!previewMedia) return;
 
@@ -310,6 +609,79 @@ export default function HomePage() {
         />
       )}
 
+      <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
+
+      {callState.status !== "idle" && (
+        <div className="fixed inset-x-3 bottom-4 z-[70] mx-auto w-[min(94vw,430px)] overflow-hidden rounded-2xl border border-white/15 bg-[#12121a]/95 p-3 text-white shadow-2xl backdrop-blur-xl">
+          <div className="flex items-center gap-3">
+            <img
+              src={callState.peer?.profilePic || "https://placehold.co/48x48?text=U"}
+              alt={callState.peer?.fullName || "Caller"}
+              className="h-12 w-12 shrink-0 rounded-full object-cover"
+            />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold">{callState.peer?.fullName || "QuickChat user"}</p>
+              <p className="mt-0.5 text-xs text-slate-300">
+                {callState.status === "ringing"
+                  ? "Incoming audio call"
+                  : callState.status === "calling"
+                    ? "Calling..."
+                    : callState.status === "connecting"
+                      ? "Connecting..."
+                      : callState.muted
+                        ? "Audio call active · Muted"
+                        : "Audio call active"}
+              </p>
+            </div>
+            <FiPhone className="hidden h-5 w-5 text-emerald-300 sm:block" />
+          </div>
+
+          <div className="mt-3 flex items-center justify-end gap-2">
+            {callState.status === "ringing" ? (
+              <>
+                <button
+                  type="button"
+                  onClick={rejectAudioCall}
+                  className="inline-flex h-10 min-w-24 items-center justify-center gap-2 rounded-xl bg-rose-500 px-4 text-sm font-semibold text-white hover:bg-rose-600"
+                >
+                  <FiPhoneOff />
+                  Decline
+                </button>
+                <button
+                  type="button"
+                  onClick={acceptAudioCall}
+                  className="inline-flex h-10 min-w-24 items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 text-sm font-semibold text-white hover:bg-emerald-600"
+                >
+                  <FiPhone />
+                  Accept
+                </button>
+              </>
+            ) : (
+              <>
+                {callState.status === "active" && (
+                  <button
+                    type="button"
+                    onClick={toggleCallMute}
+                    className="inline-flex h-10 min-w-24 items-center justify-center gap-2 rounded-xl bg-white/10 px-4 text-sm font-semibold text-white hover:bg-white/15"
+                  >
+                    {callState.muted ? <FiMicOff /> : <FiMic />}
+                    {callState.muted ? "Unmute" : "Mute"}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={endAudioCall}
+                  className="inline-flex h-10 min-w-24 items-center justify-center gap-2 rounded-xl bg-rose-500 px-4 text-sm font-semibold text-white hover:bg-rose-600"
+                >
+                  <FiPhoneOff />
+                  End
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 px-2 pb-2 lg:grid-cols-12 lg:gap-3 lg:px-0 lg:pb-0">
       <div className="hidden lg:col-span-4 lg:block lg:h-full xl:col-span-3">
         <Sidebar
@@ -365,6 +737,8 @@ export default function HomePage() {
           isTyping={isSelectedUserTyping}
           theme={theme}
           onOpenMedia={() => setIsMediaOpen(true)}
+          onStartAudioCall={startAudioCall}
+          isCallDisabled={callState.status !== "idle" || !selectedUser?.isOnline}
           onPreviewMedia={openPreview}
           onReplyMessage={setReplyToMessage}
           onCancelReply={() => setReplyToMessage(null)}

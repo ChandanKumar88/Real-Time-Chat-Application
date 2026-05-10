@@ -21,13 +21,17 @@ const allowedOrigins = (process.env.CLIENT_URL || "")
 const devOrigins = new Set([
   "http://localhost:5173",
   "http://127.0.0.1:5173",
+  "http://localhost:5174",
+  "http://127.0.0.1:5174",
   "http://localhost:4173",
   "http://127.0.0.1:4173",
 ]);
+const localDevOriginPattern = /^http:\/\/(localhost|127\.0\.0\.1):\d+$/;
 
 function isAllowedOrigin(origin) {
   if (!origin) return true;
   if (devOrigins.has(origin)) return true;
+  if (localDevOriginPattern.test(origin)) return true;
   if (allowedOrigins.length === 0) return true;
   return allowedOrigins.includes(origin);
 }

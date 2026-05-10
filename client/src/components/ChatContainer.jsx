@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { FiChevronDown, FiCornerUpLeft, FiGrid, FiImage, FiLock, FiSend, FiTrash2, FiX } from "react-icons/fi";
+import { FiChevronDown, FiCornerUpLeft, FiGrid, FiImage, FiLock, FiPhone, FiSend, FiTrash2, FiX } from "react-icons/fi";
 import logoIcon from "../assets/logo_icon.svg";
 import ProfileAvatar from "./ProfileAvatar";
 import { processImageFile } from "../utils/image";
@@ -25,6 +25,8 @@ export default function ChatContainer({
   onDeleteMessage,
   onReplyMessage,
   onCancelReply,
+  onStartAudioCall,
+  isCallDisabled = false,
   onOpenMedia,
   onPreviewMedia,
   theme = "dark",
@@ -220,14 +222,29 @@ export default function ChatContainer({
             </p>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={onOpenMedia}
-          className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg xl:hidden sm:h-9 sm:w-9 ${isDark ? "border border-white/10 bg-white/5 text-slate-300" : "border border-slate-200 bg-white text-slate-700"}`}
-          title="Open media"
-        >
-          <FiGrid />
-        </button>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <button
+            type="button"
+            onClick={onStartAudioCall}
+            disabled={isCallDisabled}
+            className={`inline-flex h-8 w-8 items-center justify-center rounded-lg transition sm:h-9 sm:w-9 ${
+              isDark
+                ? "border border-white/10 bg-white/5 text-emerald-300 hover:bg-white/10 disabled:text-slate-600"
+                : "border border-slate-200 bg-white text-emerald-600 hover:bg-slate-100 disabled:text-slate-300"
+            } disabled:cursor-not-allowed`}
+            title={isCallDisabled ? "Audio call unavailable" : "Audio call"}
+          >
+            <FiPhone />
+          </button>
+          <button
+            type="button"
+            onClick={onOpenMedia}
+            className={`inline-flex h-8 w-8 items-center justify-center rounded-lg xl:hidden sm:h-9 sm:w-9 ${isDark ? "border border-white/10 bg-white/5 text-slate-300" : "border border-slate-200 bg-white text-slate-700"}`}
+            title="Open media"
+          >
+            <FiGrid />
+          </button>
+        </div>
       </header>
 
       <div
