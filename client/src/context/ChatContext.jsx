@@ -36,10 +36,11 @@ export function ChatProvider({ children }) {
       const receiverId = message.receiverId?.toString?.() || message.receiverId;
       const peerId = senderId === user._id ? receiverId : senderId;
       const freshPeer = usersRef.current.find((u) => u._id === peerId);
+      const messagePeerPublicKey = senderId === user._id ? message.receiverPublicKey : message.senderPublicKey;
       const text = await decryptText({
         encryptedPayload: message.encryptedPayload,
         myUserId: user._id,
-        peerPublicKey: freshPeer?.publicKey || peerUser?.publicKey,
+        peerPublicKey: messagePeerPublicKey || freshPeer?.publicKey || peerUser?.publicKey,
       });
 
       if (text === null) {
@@ -60,6 +61,7 @@ export function ChatProvider({ children }) {
   useEffect(() => {
     async function publishEncryptionKey() {
       if (!user?._id) return;
+      if (user.encryptionPassphraseRequired) return;
 
       try {
         const savedKeyPair = getLocalKeyPair(user._id);
@@ -77,7 +79,7 @@ export function ChatProvider({ children }) {
     }
 
     publishEncryptionKey();
-  }, [setUser, user?._id, user?.publicKey]);
+  }, [setUser, user?._id, user?.publicKey, user?.encryptionPassphraseRequired]);
 
   useEffect(() => {
     selectedUserRef.current = selectedUser;
@@ -109,7 +111,7 @@ export function ChatProvider({ children }) {
   }, [users, selectedUser]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || user.encryptionPassphraseRequired) return;
     const s = io(SOCKET_URL, {
       transports: ["websocket", "polling"],
       reconnection: true,
@@ -184,7 +186,7 @@ export function ChatProvider({ children }) {
   }, [user, decryptMessage]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || user.encryptionPassphraseRequired) return;
 
     const intervalId = window.setInterval(() => {
       loadUsers().catch(() => null);
@@ -194,7 +196,7 @@ export function ChatProvider({ children }) {
   }, [user]);
 
   useEffect(() => {
-    if (!user || !selectedUser) return;
+    if (!user || user.encryptionPassphraseRequired || !selectedUser) return;
 
     const intervalId = window.setInterval(async () => {
       try {
@@ -220,7 +222,7 @@ export function ChatProvider({ children }) {
   }, [user, selectedUser, decryptMessages]);
 
   useEffect(() => {
-    if (!user || !selectedUser) return;
+    if (!user || user.encryptionPassphraseRequired || !selectedUser) return;
 
     const intervalId = window.setInterval(async () => {
       try {
@@ -257,6 +259,10 @@ export function ChatProvider({ children }) {
   }
 
   async function sendMessage(targetUserId, payload) {
+    if (user.encryptionPassphraseRequired) {
+      throw new Error("Chat recovery passphrase enter karke encrypted chats unlock karo.");
+    }
+
     const targetUser = users.find((u) => u._id === targetUserId) || selectedUserRef.current;
     const localKeyPair = getLocalKeyPair(user._id);
     if (payload.text && user.publicKey && localKeyPair?.publicKey !== user.publicKey) {
@@ -271,10 +277,13 @@ export function ChatProvider({ children }) {
       _id: tempId,
       senderId: user._id,
       receiverId: targetUserId,
+      replyTo: payload.replyTo || null,
       text: payload.text || "",
       encryptedPayload,
       encrypted: Boolean(encryptedPayload),
       encryptionVersion: encryptedPayload ? 1 : 0,
+      senderPublicKey: user.publicKey || localKeyPair?.publicKey || "",
+      receiverPublicKey: targetUser?.publicKey || "",
       image: payload.image || "",
       video: payload.video || "",
       seen: false,

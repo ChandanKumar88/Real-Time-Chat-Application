@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const Message = require("../models/Message");
+const User = require("../models/User");
 const { cloudinary } = require("../config/cloudinary");
 const { getSocketIdsByUserId } = require("../socket/presenceStore");
 
@@ -27,9 +28,38 @@ async function sendMessage(req, res) {
   const encryptedPayload = req.body.encryptedPayload?.trim?.() || "";
   const image = req.body.image || "";
   const video = req.body.video || "";
+  const replyTo = req.body.replyTo || null;
 
   if (!text && !encryptedPayload && !image && !video) {
     return res.status(400).json({ success: false, message: "Message cannot be empty" });
+  }
+  if (replyTo && !mongoose.isValidObjectId(replyTo)) {
+    return res.status(400).json({ success: false, message: "Invalid reply message" });
+  }
+
+  const [sender, receiver] = await Promise.all([
+    User.findById(req.user.id).select("publicKey"),
+    User.findById(userId).select("publicKey"),
+  ]);
+
+  if (!receiver) {
+    return res.status(404).json({ success: false, message: "Receiver not found" });
+  }
+
+  let replyMessageId = null;
+  if (replyTo) {
+    const replyMessage = await Message.findOne({
+      _id: replyTo,
+      $or: [
+        { senderId: req.user.id, receiverId: userId },
+        { senderId: userId, receiverId: req.user.id },
+      ],
+    }).select("_id");
+
+    if (!replyMessage) {
+      return res.status(404).json({ success: false, message: "Reply message not found" });
+    }
+    replyMessageId = replyMessage._id;
   }
 
   let imageUrl = "";
@@ -52,10 +82,13 @@ async function sendMessage(req, res) {
   const message = await Message.create({
     senderId: req.user.id,
     receiverId: userId,
+    replyTo: replyMessageId,
     text: encryptedPayload ? "" : text,
     encryptedPayload,
     encrypted: Boolean(encryptedPayload),
     encryptionVersion: encryptedPayload ? 1 : 0,
+    senderPublicKey: sender?.publicKey || "",
+    receiverPublicKey: receiver?.publicKey || "",
     image: imageUrl,
     video: videoUrl,
   });

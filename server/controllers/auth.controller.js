@@ -9,6 +9,7 @@ const { sendSignupOtpEmail } = require("../utils/email");
 
 const OTP_EXPIRY_MINUTES = 10;
 const OTP_MAX_ATTEMPTS = 5;
+const ACTIVE_SESSION_MESSAGE = "This account is already logged in on another device. Please logout there first.";
 
 function serializeUser(user) {
   return {
@@ -26,6 +27,22 @@ function serializeUser(user) {
 
 function generateOtp() {
   return crypto.randomInt(100000, 1000000).toString();
+}
+
+function createSessionId() {
+  return crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(24).toString("hex");
+}
+
+async function startSession(user) {
+  const sessionId = createSessionId();
+  user.activeSessionId = sessionId;
+  user.activeSessionStartedAt = new Date();
+  await user.save();
+  return sessionId;
+}
+
+function hasActiveSession(user) {
+  return Boolean(user.activeSessionId);
 }
 
 async function signup(req, res) {
@@ -127,13 +144,14 @@ async function verifySignupOtp(req, res) {
     bio: pendingSignup.bio || "",
     profilePic: uploadedProfilePic,
   });
+  const sessionId = await startSession(user);
   await PendingSignup.deleteOne({ _id: pendingSignup._id });
 
   return res.status(201).json({
     success: true,
     message: "Signup verified successfully",
     data: {
-      token: generateToken(user),
+      token: generateToken(user, sessionId),
       user: serializeUser(user),
     },
   });
@@ -158,7 +176,12 @@ async function login(req, res) {
     return res.status(401).json({ success: false, message: "Invalid credentials" });
   }
 
-  const token = generateToken(user);
+  if (hasActiveSession(user)) {
+    return res.status(409).json({ success: false, message: ACTIVE_SESSION_MESSAGE });
+  }
+
+  const sessionId = await startSession(user);
+  const token = generateToken(user, sessionId);
   return res.json({
     success: true,
     message: "Login successful",
@@ -179,6 +202,10 @@ async function googleLogin(req, res) {
     });
 
     if (user) {
+      if (hasActiveSession(user)) {
+        return res.status(409).json({ success: false, message: ACTIVE_SESSION_MESSAGE });
+      }
+
       let shouldSave = false;
       if (!user.googleId) {
         user.googleId = payload.sub;
@@ -203,11 +230,12 @@ async function googleLogin(req, res) {
       });
     }
 
+    const sessionId = await startSession(user);
     return res.json({
       success: true,
       message: "Google login successful",
       data: {
-        token: generateToken(user),
+        token: generateToken(user, sessionId),
         user: serializeUser(user),
       },
     });
@@ -219,6 +247,18 @@ async function googleLogin(req, res) {
   }
 }
 
+async function logout(req, res) {
+  await User.updateOne(
+    { _id: req.user.id, activeSessionId: req.user.sessionId },
+    {
+      $set: { isOnline: false, lastSeen: new Date() },
+      $unset: { activeSessionId: "", activeSessionStartedAt: "" },
+    }
+  );
+
+  return res.json({ success: true, message: "Logged out successfully" });
+}
+
 async function me(req, res) {
   const user = await User.findById(req.user.id).select("-password");
   if (!user) {
@@ -227,4 +267,4 @@ async function me(req, res) {
   return res.json({ success: true, data: user });
 }
 
-module.exports = { signup, verifySignupOtp, login, googleLogin, me };
+module.exports = { signup, verifySignupOtp, login, googleLogin, logout, me };

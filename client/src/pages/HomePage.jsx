@@ -9,7 +9,7 @@ import RightSidebar from "../components/RightSidebar";
 import bgImage from "../assets/bgImage.svg";
 
 export default function HomePage() {
-  const { user, logout } = useAuth();
+  const { user, logout, setupEncryptionPassphrase } = useAuth();
   const {
     users,
     loadUsers,
@@ -28,17 +28,21 @@ export default function HomePage() {
   const [text, setText] = useState("");
   const [image, setImage] = useState("");
   const [video, setVideo] = useState("");
+  const [replyToMessage, setReplyToMessage] = useState(null);
   const [theme, setTheme] = useState(() => localStorage.getItem("chat_theme") || "light");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isMediaOpen, setIsMediaOpen] = useState(false);
   const [previewMedia, setPreviewMedia] = useState(null);
   const [previewZoom, setPreviewZoom] = useState(1);
   const [previewVideoRatio, setPreviewVideoRatio] = useState(null);
+  const [recoveryPassphrase, setRecoveryPassphrase] = useState("");
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
   const pinchStateRef = useRef(null);
 
   useEffect(() => {
+    if (user?.encryptionPassphraseRequired) return;
     loadUsers().catch(() => toast.error("Failed to load users"));
-  }, []);
+  }, [user?.encryptionPassphraseRequired]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
@@ -46,19 +50,22 @@ export default function HomePage() {
   }, [theme]);
 
   useEffect(() => {
+    if (user?.encryptionPassphraseRequired) return;
     if (!selectedUser) return;
+    setReplyToMessage(null);
     loadMessages(selectedUser._id).catch((error) => {
       toast.error(error?.response?.data?.message || "Failed to load messages");
     });
     return () => stopTyping(selectedUser._id);
-  }, [selectedUser]);
+  }, [selectedUser, user?.encryptionPassphraseRequired]);
 
   useEffect(() => {
+    if (user?.encryptionPassphraseRequired) return;
     if (!selectedUser) return;
     messages.forEach((m) => {
       if (m.receiverId === user._id && !m.seen) markSeen(m._id).catch(() => null);
     });
-  }, [messages, selectedUser, user?._id]);
+  }, [messages, selectedUser, user?._id, user?.encryptionPassphraseRequired]);
 
   useEffect(() => {
     setPreviewZoom(1);
@@ -166,6 +173,28 @@ export default function HomePage() {
 
   const isPortraitPreviewVideo = previewMedia?.type === "video" && previewVideoRatio && previewVideoRatio < 1;
 
+  async function unlockEncryptedChats(event) {
+    event.preventDefault();
+    if (recoveryBusy) return;
+
+    try {
+      setRecoveryBusy(true);
+      const updatedUser = await setupEncryptionPassphrase(recoveryPassphrase);
+      if (updatedUser.encryptionRecoveryRequired || updatedUser.encryptionPassphraseRequired) {
+        toast.error("Original device par pehle chat recovery passphrase set karo.");
+        return;
+      }
+
+      setRecoveryPassphrase("");
+      toast.success("Encrypted chats unlocked");
+      await loadUsers();
+    } catch (error) {
+      toast.error(error.message || "Unable to unlock encrypted chats");
+    } finally {
+      setRecoveryBusy(false);
+    }
+  }
+
   useEffect(() => {
     if (!previewMedia) return;
 
@@ -184,6 +213,49 @@ export default function HomePage() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [previewMedia, previewableMedia]);
+
+  if (user?.encryptionPassphraseRequired) {
+    return (
+      <div className={`grid min-h-[100dvh] place-items-center px-4 ${theme === "dark" ? "bg-black text-white" : "bg-slate-100 text-slate-900"}`}>
+        <form
+          onSubmit={unlockEncryptedChats}
+          className={`w-full max-w-md rounded-2xl border p-5 shadow-2xl ${
+            theme === "dark" ? "border-white/15 bg-[#101014]" : "border-slate-200 bg-white"
+          }`}
+        >
+          <h1 className="text-2xl font-semibold">Unlock encrypted chats</h1>
+          <p className={`mt-3 text-sm leading-6 ${theme === "dark" ? "text-slate-300" : "text-slate-600"}`}>
+            Previous messages dekhne ke liye apna chat recovery passphrase enter karo. Agar ye Google account ka first device hai, original
+            Chrome window par pehle passphrase set karo.
+          </p>
+          <input
+            className={`mt-5 w-full rounded-xl border px-3 py-3 outline-none transition focus:border-violet-400 ${
+              theme === "dark"
+                ? "border-white/20 bg-transparent text-white placeholder:text-slate-500"
+                : "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400"
+            }`}
+            type="password"
+            placeholder="Chat recovery passphrase"
+            value={recoveryPassphrase}
+            onChange={(event) => setRecoveryPassphrase(event.target.value)}
+          />
+          <button
+            className="mt-4 w-full rounded-xl bg-gradient-to-r from-violet-500 to-fuchsia-500 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={recoveryBusy || recoveryPassphrase.length < 8}
+          >
+            {recoveryBusy ? "Unlocking..." : "Unlock chats"}
+          </button>
+          <button
+            type="button"
+            className={`mt-4 text-sm font-semibold ${theme === "dark" ? "text-slate-300 hover:text-white" : "text-slate-600 hover:text-slate-900"}`}
+            onClick={logout}
+          >
+            Use another account
+          </button>
+        </form>
+      </div>
+    );
+  }
 
   return (
     <div className={`min-h-[100dvh] p-0 md:grid md:min-h-screen md:place-items-center md:p-3 ${theme === "dark" ? "bg-black" : "bg-slate-100"}`}>
@@ -289,10 +361,13 @@ export default function HomePage() {
           setVideo={setVideo}
           image={image}
           video={video}
+          replyToMessage={replyToMessage}
           isTyping={isSelectedUserTyping}
           theme={theme}
           onOpenMedia={() => setIsMediaOpen(true)}
           onPreviewMedia={openPreview}
+          onReplyMessage={setReplyToMessage}
+          onCancelReply={() => setReplyToMessage(null)}
           onDeleteMessage={async (messageId) => {
             const confirmed = window.confirm("Delete this message?");
             if (!confirmed) return;
@@ -305,10 +380,11 @@ export default function HomePage() {
           onSend={async (e) => {
             e.preventDefault();
             if (!selectedUser || (!text.trim() && !image && !video)) return;
-            const payload = { text: text.trim(), image, video };
+            const payload = { text: text.trim(), image, video, replyTo: replyToMessage?._id || null };
             setText("");
             setImage("");
             setVideo("");
+            setReplyToMessage(null);
             stopTyping(selectedUser._id);
             try {
               await sendMessage(selectedUser._id, payload);
@@ -316,6 +392,7 @@ export default function HomePage() {
               setText(payload.text);
               setImage(payload.image);
               setVideo(payload.video);
+              setReplyToMessage(replyToMessage);
               toast.error(getSendErrorMessage(error, payload));
             }
           }}

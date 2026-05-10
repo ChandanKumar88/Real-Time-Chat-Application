@@ -13,11 +13,15 @@ export default function AuthPage({ mode = "login" }) {
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [googleButtonReady, setGoogleButtonReady] = useState(false);
   const [authBusy, setAuthBusy] = useState(false);
+  const [googleRecoveryUser, setGoogleRecoveryUser] = useState(null);
+  const [chatPassphrase, setChatPassphrase] = useState("");
+  const [confirmChatPassphrase, setConfirmChatPassphrase] = useState("");
   const googleButtonRef = useRef(null);
   const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-  const { login, signup, verifySignupOtp, googleLogin } = useAuth();
+  const { login, signup, verifySignupOtp, googleLogin, setupEncryptionPassphrase, logout } = useAuth();
   const navigate = useNavigate();
   const showOtpStep = isSignup && Boolean(otpSentTo);
+  const isGoogleRecoverySetup = googleRecoveryUser && !googleRecoveryUser.encryptionKeyBackup;
 
   const handleGoogleCredential = useCallback(
     async (credential) => {
@@ -27,7 +31,15 @@ export default function AuthPage({ mode = "login" }) {
       }
 
       try {
-        await googleLogin(credential);
+        const result = await googleLogin(credential);
+        if (result.data.user.encryptionPassphraseRequired) {
+          setGoogleRecoveryUser(result.data.user);
+          setChatPassphrase("");
+          setConfirmChatPassphrase("");
+          toast.success("Google verified");
+          return;
+        }
+
         toast.success(isSignup ? "Account created with Google" : "Welcome back");
         navigate("/");
       } catch (error) {
@@ -111,6 +123,30 @@ export default function AuthPage({ mode = "login" }) {
   async function submit(e) {
     e.preventDefault();
     if (authBusy) return;
+
+    if (googleRecoveryUser) {
+      if (isGoogleRecoverySetup && chatPassphrase !== confirmChatPassphrase) {
+        toast.error("Chat recovery passphrase match nahi ho raha");
+        return;
+      }
+
+      try {
+        setAuthBusy(true);
+        const nextUser = await setupEncryptionPassphrase(chatPassphrase);
+        if (nextUser.encryptionRecoveryRequired) {
+          toast.error("Is account ka chat key backup original browser se create karo.");
+          return;
+        }
+
+        toast.success(isGoogleRecoverySetup ? "Chat recovery passphrase set" : "Encrypted chats unlocked");
+        navigate("/");
+      } catch (error) {
+        toast.error(error.message || "Chat recovery setup failed");
+      } finally {
+        setAuthBusy(false);
+      }
+      return;
+    }
 
     if (showOtpStep) {
       try {
@@ -203,10 +239,52 @@ export default function AuthPage({ mode = "login" }) {
           className="w-full min-w-0 max-w-[430px] rounded-xl border border-white/20 bg-black/45 p-4 shadow-2xl backdrop-blur-md sm:p-6"
         >
           <h2 className="mb-5 text-3xl font-semibold">
-            {showOtpStep ? "Verify OTP" : isSignup ? "Sign up" : "Login"}
+            {googleRecoveryUser ? "Chat recovery" : showOtpStep ? "Verify OTP" : isSignup ? "Sign up" : "Login"}
           </h2>
 
-          {showOtpStep ? (
+          {googleRecoveryUser ? (
+            <>
+              <p className="mb-4 text-sm leading-6 text-slate-300">
+                {isGoogleRecoverySetup
+                  ? "Google account ke encrypted messages ko kisi bhi device par open karne ke liye ek chat recovery passphrase set karo."
+                  : "Apna chat recovery passphrase enter karo, phir previous encrypted messages is device par bhi open honge."}
+              </p>
+              <input
+                className="mb-3 w-full rounded-md border border-white/25 bg-transparent px-3 py-2 text-slate-100 outline-none transition placeholder:text-slate-400 focus:border-violet-400"
+                placeholder={isGoogleRecoverySetup ? "Create chat recovery passphrase" : "Chat recovery passphrase"}
+                type="password"
+                value={chatPassphrase}
+                onChange={(e) => setChatPassphrase(e.target.value)}
+              />
+              {isGoogleRecoverySetup && (
+                <input
+                  className="mb-4 w-full rounded-md border border-white/25 bg-transparent px-3 py-2 text-slate-100 outline-none transition placeholder:text-slate-400 focus:border-violet-400"
+                  placeholder="Confirm chat recovery passphrase"
+                  type="password"
+                  value={confirmChatPassphrase}
+                  onChange={(e) => setConfirmChatPassphrase(e.target.value)}
+                />
+              )}
+              <button
+                className="w-full rounded-md bg-gradient-to-r from-violet-500 to-fuchsia-500 py-2.5 font-medium text-white transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-70"
+                disabled={authBusy || chatPassphrase.length < 8 || (isGoogleRecoverySetup && confirmChatPassphrase.length < 8)}
+              >
+                {authBusy ? "Please wait..." : isGoogleRecoverySetup ? "Set & Continue" : "Unlock & Continue"}
+              </button>
+              <button
+                type="button"
+                className="mt-4 text-xs font-semibold text-slate-300 hover:text-white"
+                onClick={() => {
+                  logout();
+                  setGoogleRecoveryUser(null);
+                  setChatPassphrase("");
+                  setConfirmChatPassphrase("");
+                }}
+              >
+                Use another account
+              </button>
+            </>
+          ) : showOtpStep ? (
             <>
               <p className="mb-4 text-sm leading-6 text-slate-300">
                 Enter the 6 digit code sent to <span className="font-semibold text-white">{otpSentTo}</span>.
@@ -260,25 +338,25 @@ export default function AuthPage({ mode = "login" }) {
             </>
           )}
           <input
-            className={`mb-3 w-full rounded-md border border-white/25 bg-transparent px-3 py-2 text-slate-100 outline-none transition placeholder:text-slate-400 focus:border-violet-400 ${showOtpStep ? "hidden" : ""}`}
+            className={`mb-3 w-full rounded-md border border-white/25 bg-transparent px-3 py-2 text-slate-100 outline-none transition placeholder:text-slate-400 focus:border-violet-400 ${googleRecoveryUser || showOtpStep ? "hidden" : ""}`}
             placeholder="Email Address"
             type="email"
             onChange={(e) => setForm({ ...form, email: e.target.value })}
           />
           <input
-            className={`mb-4 w-full rounded-md border border-white/25 bg-transparent px-3 py-2 text-slate-100 outline-none transition placeholder:text-slate-400 focus:border-violet-400 ${showOtpStep ? "hidden" : ""}`}
+            className={`mb-4 w-full rounded-md border border-white/25 bg-transparent px-3 py-2 text-slate-100 outline-none transition placeholder:text-slate-400 focus:border-violet-400 ${googleRecoveryUser || showOtpStep ? "hidden" : ""}`}
             placeholder="Password"
             type="password"
             onChange={(e) => setForm({ ...form, password: e.target.value })}
           />
           <button
-            className="w-full rounded-md bg-gradient-to-r from-violet-500 to-fuchsia-500 py-2.5 font-medium text-white transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-70"
+            className={`w-full rounded-md bg-gradient-to-r from-violet-500 to-fuchsia-500 py-2.5 font-medium text-white transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-70 ${googleRecoveryUser ? "hidden" : ""}`}
             disabled={authBusy || (showOtpStep && otp.length !== 6)}
           >
             {authBusy ? "Please wait..." : showOtpStep ? "Verify & Create Account" : isSignup ? "Send OTP" : "Login"}
           </button>
 
-          {showOtpStep ? (
+          {!googleRecoveryUser && (showOtpStep ? (
             <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-300">
               <button type="button" className="font-semibold text-violet-300 hover:underline" onClick={resendOtp}>
                 Resend OTP
@@ -313,9 +391,9 @@ export default function AuthPage({ mode = "login" }) {
                 </div>
               )}
             </>
-          )}
+          ))}
 
-          {isSignup && !showOtpStep && (
+          {!googleRecoveryUser && isSignup && !showOtpStep && (
             <label className="mt-4 flex items-center gap-2 text-xs text-slate-300">
               <input type="checkbox" checked={acceptTerms} onChange={(e) => setAcceptTerms(e.target.checked)} />
               Agree to the terms of use & privacy policy.
@@ -329,7 +407,7 @@ export default function AuthPage({ mode = "login" }) {
               setOtpSentTo("");
               setOtp("");
             }}
-            className="mt-4 text-xs text-slate-300"
+            className={`mt-4 text-xs text-slate-300 ${googleRecoveryUser ? "hidden" : ""}`}
           >
             {isSignup ? "Already have an account? " : "New here? "}
             <span className="font-semibold text-violet-400 hover:underline">{isSignup ? "Login here" : "Create account"}</span>

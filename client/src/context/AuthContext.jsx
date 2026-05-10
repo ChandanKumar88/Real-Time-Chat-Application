@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { api } from "../services/api";
-import { ensureRecoverableKeyPair } from "../utils/e2ee";
+import { ensureRecoverableKeyPair, getLocalKeyPair } from "../utils/e2ee";
 
 const AuthContext = createContext(null);
 
@@ -9,6 +9,14 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   const token = localStorage.getItem("chat_token");
+
+  function needsRecoveryPassphrase(nextUser) {
+    if (!nextUser?._id) return false;
+    const localKeyPair = getLocalKeyPair(nextUser._id);
+    if (!nextUser.publicKey) return true;
+    if (!nextUser.encryptionKeyBackup) return true;
+    return localKeyPair?.publicKey !== nextUser.publicKey;
+  }
 
   const syncRecoverableEncryptionKey = useCallback(async (nextUser, password) => {
     if (!nextUser?._id || !password) return nextUser;
@@ -24,6 +32,9 @@ export function AuthProvider({ children }) {
     } catch (error) {
       if (error.message === "Encrypted chat key is missing on this device") {
         return { ...nextUser, encryptionRecoveryRequired: true };
+      }
+      if (error.name === "OperationError") {
+        throw new Error("Invalid chat recovery passphrase");
       }
       throw error;
     }
@@ -43,7 +54,11 @@ export function AuthProvider({ children }) {
       if (!token) return setLoading(false);
       try {
         const { data } = await api.get("/auth/me");
-        setUser(data.data);
+        setUser({
+          ...data.data,
+          encryptionPassphraseRequired: needsRecoveryPassphrase(data.data),
+          encryptionRecoveryRequired: false,
+        });
       } catch {
         localStorage.removeItem("chat_token");
       } finally {
@@ -77,18 +92,46 @@ export function AuthProvider({ children }) {
   const googleLogin = useCallback(async (credential) => {
     const { data } = await api.post("/auth/google", { credential });
     localStorage.setItem("chat_token", data.data.token);
-    setUser(data.data.user);
-    return data;
+    const nextUser = {
+      ...data.data.user,
+      encryptionPassphraseRequired: needsRecoveryPassphrase(data.data.user),
+      encryptionRecoveryRequired: false,
+    };
+    setUser(nextUser);
+    return { ...data, data: { ...data.data, user: nextUser } };
   }, []);
 
-  const logout = useCallback(() => {
-    localStorage.removeItem("chat_token");
-    setUser(null);
+  const setupEncryptionPassphrase = useCallback(async (passphrase) => {
+    if (!user?._id) throw new Error("Login first");
+    if (!passphrase || passphrase.length < 8) {
+      throw new Error("Chat recovery passphrase kam se kam 8 characters ka rakho");
+    }
+
+    const nextUser = await syncRecoverableEncryptionKey(user, passphrase);
+    const updatedUser = {
+      ...nextUser,
+      encryptionPassphraseRequired: Boolean(nextUser.encryptionRecoveryRequired),
+    };
+    setUser(updatedUser);
+    return updatedUser;
+  }, [syncRecoverableEncryptionKey, user]);
+
+  const logout = useCallback(async () => {
+    try {
+      if (localStorage.getItem("chat_token")) {
+        await api.post("/auth/logout");
+      }
+    } catch {
+      // Local logout should still work even if the server is unreachable.
+    } finally {
+      localStorage.removeItem("chat_token");
+      setUser(null);
+    }
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, login, signup, verifySignupOtp, googleLogin, logout, setUser }),
-    [user, loading, login, signup, verifySignupOtp, googleLogin, logout]
+    () => ({ user, loading, login, signup, verifySignupOtp, googleLogin, setupEncryptionPassphrase, logout, setUser }),
+    [user, loading, login, signup, verifySignupOtp, googleLogin, setupEncryptionPassphrase, logout]
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

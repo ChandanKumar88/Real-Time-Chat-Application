@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { FiGrid, FiImage, FiLock, FiSend, FiTrash2, FiX } from "react-icons/fi";
+import { FiChevronDown, FiCornerUpLeft, FiGrid, FiImage, FiLock, FiSend, FiTrash2, FiX } from "react-icons/fi";
 import logoIcon from "../assets/logo_icon.svg";
 import ProfileAvatar from "./ProfileAvatar";
 import { processImageFile } from "../utils/image";
@@ -19,16 +19,22 @@ export default function ChatContainer({
   setVideo,
   image = "",
   video = "",
+  replyToMessage = null,
   isTyping = false,
   onSend,
   onDeleteMessage,
+  onReplyMessage,
+  onCancelReply,
   onOpenMedia,
   onPreviewMedia,
   theme = "dark",
 }) {
   const imageInputRef = useRef(null);
+  const textInputRef = useRef(null);
   const messagesContainerRef = useRef(null);
   const [mediaError, setMediaError] = useState("");
+  const [openMenuId, setOpenMenuId] = useState("");
+  const [swipeState, setSwipeState] = useState(null);
   const isDark = theme === "dark";
 
   useLayoutEffect(() => {
@@ -42,6 +48,64 @@ export default function ChatContainer({
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return "";
     return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+
+  function getMessageId(value) {
+    return value?._id || value || "";
+  }
+
+  function getMessagePreview(message) {
+    if (!message) return "Original message";
+    if (message.decryptionFailed) return "Message can't be opened on this device";
+    if (message.text) return message.text;
+    if (message.image) return "Photo";
+    if (message.video) return "Video";
+    return "Message";
+  }
+
+  function getMessageAuthor(message) {
+    if (!message) return "Message";
+    return message.senderId === user._id ? "You" : selectedUser?.fullName || "User";
+  }
+
+  function getReplyMessage(message) {
+    const replyId = getMessageId(message?.replyTo);
+    if (!replyId) return null;
+    return messages.find((item) => item._id === replyId) || null;
+  }
+
+  function selectReply(message) {
+    onReplyMessage?.(message);
+    setOpenMenuId("");
+    window.setTimeout(() => textInputRef.current?.focus(), 0);
+  }
+
+  function handleTouchStart(event, message) {
+    if (event.touches.length !== 1) return;
+    const touch = event.touches[0];
+    setSwipeState({ id: message._id, startX: touch.clientX, startY: touch.clientY, offset: 0 });
+  }
+
+  function handleTouchMove(event, message) {
+    if (!swipeState || swipeState.id !== message._id || event.touches.length !== 1) return;
+    const touch = event.touches[0];
+    const dx = touch.clientX - swipeState.startX;
+    const dy = Math.abs(touch.clientY - swipeState.startY);
+    if (dy > 42 && Math.abs(dx) < 24) {
+      setSwipeState(null);
+      return;
+    }
+
+    const nextOffset = Math.max(0, Math.min(76, dx));
+    if (nextOffset > 4) event.preventDefault();
+    setSwipeState((prev) => (prev ? { ...prev, offset: nextOffset } : prev));
+  }
+
+  function handleTouchEnd(message) {
+    if (swipeState?.id === message._id && swipeState.offset >= 54) {
+      selectReply(message);
+    }
+    setSwipeState(null);
   }
 
   if (!selectedUser) {
@@ -94,10 +158,78 @@ export default function ChatContainer({
         {messages.map((m) => {
           const isMine = m.senderId === user._id;
           const avatarSrc = isMine ? user?.profilePic || "https://placehold.co/28x28?text=U" : selectedUser?.profilePic || "https://placehold.co/28x28?text=U";
+          const repliedMessage = getReplyMessage(m);
+          const swipeOffset = swipeState?.id === m._id ? swipeState.offset : 0;
           return (
-            <div key={m._id} className={`flex ${isMine ? "justify-end" : "justify-start"}`}>
-              <div className={`flex max-w-[92%] flex-col sm:max-w-[82%] ${isMine ? "items-end" : "items-start"}`}>
-                <div className={`max-w-full rounded-2xl px-2.5 py-2 sm:px-3 ${isMine ? "bg-violet-600 text-white" : isDark ? "bg-white/10 text-slate-100" : "bg-slate-100 text-slate-800"}`}>
+            <div
+              key={m._id}
+              className={`relative flex ${isMine ? "justify-end" : "justify-start"}`}
+              onTouchStart={(event) => handleTouchStart(event, m)}
+              onTouchMove={(event) => handleTouchMove(event, m)}
+              onTouchEnd={() => handleTouchEnd(m)}
+              onTouchCancel={() => setSwipeState(null)}
+            >
+              {swipeOffset > 10 && (
+                <div className={`absolute left-2 top-1/2 -translate-y-1/2 rounded-full p-2 ${isDark ? "bg-white/10 text-violet-200" : "bg-violet-100 text-violet-700"}`}>
+                  <FiCornerUpLeft />
+                </div>
+              )}
+              <div
+                className={`flex max-w-[92%] flex-col transition-transform sm:max-w-[82%] ${isMine ? "items-end" : "items-start"}`}
+                style={{ transform: swipeOffset ? `translateX(${swipeOffset}px)` : undefined }}
+              >
+                <div className={`group relative max-w-full rounded-2xl px-2.5 py-2 sm:px-3 ${isMine ? "bg-violet-600 text-white" : isDark ? "bg-white/10 text-slate-100" : "bg-slate-100 text-slate-800"}`}>
+                  <button
+                    type="button"
+                    title="Message options"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setOpenMenuId((id) => (id === m._id ? "" : m._id));
+                    }}
+                    className={`absolute top-1 hidden h-7 w-7 items-center justify-center rounded-full text-sm opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100 sm:inline-flex ${
+                      isMine ? "right-1 bg-black/10 text-white hover:bg-black/20" : "right-1 bg-black/10 text-slate-200 hover:bg-black/20"
+                    }`}
+                    aria-label="Message options"
+                  >
+                    <FiChevronDown />
+                  </button>
+                  {openMenuId === m._id && (
+                    <div
+                      className={`absolute top-0 z-30 min-w-[148px] overflow-hidden rounded-xl border py-1.5 text-sm shadow-2xl backdrop-blur-md ${
+                        isMine ? "right-[calc(100%+8px)]" : "left-[calc(100%+8px)]"
+                      } ${
+                        isDark ? "border-white/10 bg-[#15151c] text-slate-100" : "border-slate-200 bg-white text-slate-800"
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => selectReply(m)}
+                        className={`flex w-full items-center gap-3 whitespace-nowrap px-3.5 py-2.5 text-left font-medium ${isDark ? "hover:bg-white/10" : "hover:bg-slate-100"}`}
+                      >
+                        <FiCornerUpLeft className="h-4 w-4 shrink-0" />
+                        Reply
+                      </button>
+                      {isMine && !m.pending && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOpenMenuId("");
+                            onDeleteMessage?.(m._id);
+                          }}
+                          className={`flex w-full items-center gap-3 whitespace-nowrap px-3.5 py-2.5 text-left font-medium ${isDark ? "hover:bg-white/10" : "hover:bg-slate-100"}`}
+                        >
+                          <FiTrash2 className="h-4 w-4 shrink-0" />
+                          Delete
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {!!getMessageId(m.replyTo) && (
+                    <div className={`mb-2 max-w-[min(70vw,320px)] rounded-xl border-l-2 px-2.5 py-2 text-xs ${isMine ? "border-white/70 bg-black/15 text-white/90" : isDark ? "border-violet-300 bg-black/25 text-slate-200" : "border-violet-500 bg-white/80 text-slate-700"}`}>
+                      <p className={`truncate font-semibold ${isMine ? "text-white" : "text-violet-300"}`}>{getMessageAuthor(repliedMessage)}</p>
+                      <p className="line-clamp-2 break-words opacity-85">{getMessagePreview(repliedMessage)}</p>
+                    </div>
+                  )}
                   {m.decryptionFailed && (
                     <div
                       className={`flex max-w-[min(70vw,360px)] items-center gap-2 rounded-xl px-2.5 py-2 text-xs sm:text-sm ${
@@ -173,6 +305,24 @@ export default function ChatContainer({
       </div>
 
       <form onSubmit={onSend} className={`mt-1 rounded-xl p-1.5 sm:mt-2 sm:p-2 ${isDark ? "border border-white/10 bg-black/40" : "border border-slate-300 bg-white/90"}`}>
+        {replyToMessage && (
+          <div className={`mb-2 flex items-center gap-2 rounded-xl border-l-2 px-2.5 py-2 text-xs ${isDark ? "border-violet-300 bg-white/10 text-slate-200" : "border-violet-500 bg-slate-100 text-slate-700"}`}>
+            <FiCornerUpLeft className="h-4 w-4 shrink-0 text-violet-300" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate font-semibold">{getMessageAuthor(replyToMessage)}</p>
+              <p className="truncate opacity-80">{getMessagePreview(replyToMessage)}</p>
+            </div>
+            <button
+              type="button"
+              onClick={onCancelReply}
+              className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${isDark ? "hover:bg-white/10" : "hover:bg-white"}`}
+              title="Cancel reply"
+              aria-label="Cancel reply"
+            >
+              <FiX />
+            </button>
+          </div>
+        )}
         {(image || video) && (
           <div className={`mb-2 flex items-center gap-2 rounded-xl px-2 py-2 text-xs ${isDark ? "bg-white/10 text-slate-200" : "bg-slate-100 text-slate-700"}`}>
             <div className={`relative h-12 w-12 shrink-0 overflow-hidden rounded-lg ${isDark ? "bg-black/30" : "bg-white"}`}>
@@ -272,6 +422,7 @@ export default function ChatContainer({
             }}
           />
           <input
+            ref={textInputRef}
             className={`h-8 min-w-0 flex-1 rounded-lg px-3 text-sm outline-none transition focus:border-violet-400 sm:h-10 sm:rounded-xl ${
               isDark
                 ? "border border-white/20 bg-transparent text-slate-100 placeholder:text-slate-400"

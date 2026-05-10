@@ -212,7 +212,9 @@ export async function decryptText({ encryptedPayload, myUserId, peerPublicKey })
 
   try {
     const payload = JSON.parse(encryptedPayload);
-    const localKeyPair = await ensureLocalKeyPair(myUserId);
+    const localKeyPair = getLocalKeyPair(myUserId);
+    if (!localKeyPair) return null;
+
     const privateKey = await importPrivateKey(localKeyPair.privateJwk);
     const publicKey = await importPublicKey(peerPublicKey);
     const conversationKey = await deriveConversationKey(privateKey, publicKey);

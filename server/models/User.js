@@ -11,6 +11,8 @@ const userSchema = new mongoose.Schema(
     profilePic: { type: String, default: "" },
     publicKey: { type: String, default: "" },
     encryptionKeyBackup: { type: String, default: "" },
+    activeSessionId: { type: String, default: "" },
+    activeSessionStartedAt: { type: Date, default: null },
     isOnline: { type: Boolean, default: false },
     lastSeen: { type: Date, default: null },
   },
