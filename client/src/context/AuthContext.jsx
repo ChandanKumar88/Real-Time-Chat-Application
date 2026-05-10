@@ -101,6 +101,16 @@ export function AuthProvider({ children }) {
     return { ...data, data: { ...data.data, user: nextUser } };
   }, []);
 
+  const requestPasswordReset = useCallback(async (email) => {
+    const { data } = await api.post("/auth/password/forgot", { email });
+    return data;
+  }, []);
+
+  const resetPassword = useCallback(async (payload) => {
+    const { data } = await api.post("/auth/password/reset", payload);
+    return data;
+  }, []);
+
   const setupEncryptionPassphrase = useCallback(async (passphrase) => {
     if (!user?._id) throw new Error("Login first");
     if (!passphrase || passphrase.length < 8) {
@@ -130,8 +140,31 @@ export function AuthProvider({ children }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, login, signup, verifySignupOtp, googleLogin, setupEncryptionPassphrase, logout, setUser }),
-    [user, loading, login, signup, verifySignupOtp, googleLogin, setupEncryptionPassphrase, logout]
+    () => ({
+      user,
+      loading,
+      login,
+      signup,
+      verifySignupOtp,
+      googleLogin,
+      requestPasswordReset,
+      resetPassword,
+      setupEncryptionPassphrase,
+      logout,
+      setUser,
+    }),
+    [
+      user,
+      loading,
+      login,
+      signup,
+      verifySignupOtp,
+      googleLogin,
+      requestPasswordReset,
+      resetPassword,
+      setupEncryptionPassphrase,
+      logout,
+    ]
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

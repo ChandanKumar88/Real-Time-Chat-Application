@@ -39,4 +39,25 @@ async function sendSignupOtpEmail({ to, otp }) {
   });
 }
 
-module.exports = { sendSignupOtpEmail };
+async function sendPasswordResetOtpEmail({ to, otp }) {
+  const appName = process.env.APP_NAME || "QuickChat";
+  const from = process.env.SMTP_FROM || process.env.SMTP_USER;
+  const transporter = getTransporter();
+
+  await transporter.sendMail({
+    from,
+    to,
+    subject: `${appName} password reset code`,
+    text: `Your ${appName} password reset code is ${otp}. It will expire in 10 minutes.`,
+    html: `
+      <div style="font-family:Arial,sans-serif;line-height:1.5;color:#111827">
+        <h2>${appName} password reset</h2>
+        <p>Your password reset code is:</p>
+        <p style="font-size:28px;font-weight:700;letter-spacing:6px">${otp}</p>
+        <p>This code will expire in 10 minutes. If you did not request this, you can ignore this email.</p>
+      </div>
+    `,
+  });
+}
+
+module.exports = { sendSignupOtpEmail, sendPasswordResetOtpEmail };

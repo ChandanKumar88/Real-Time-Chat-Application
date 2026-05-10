@@ -2,10 +2,11 @@ const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const User = require("../models/User");
 const PendingSignup = require("../models/PendingSignup");
+const PasswordResetOtp = require("../models/PasswordResetOtp");
 const { generateToken } = require("../utils/token");
 const { cloudinary } = require("../config/cloudinary");
 const { verifyGoogleIdToken } = require("../utils/googleAuth");
-const { sendSignupOtpEmail } = require("../utils/email");
+const { sendPasswordResetOtpEmail, sendSignupOtpEmail } = require("../utils/email");
 
 const OTP_EXPIRY_MINUTES = 10;
 const OTP_MAX_ATTEMPTS = 5;
@@ -259,6 +260,95 @@ async function logout(req, res) {
   return res.json({ success: true, message: "Logged out successfully" });
 }
 
+async function requestPasswordReset(req, res) {
+  const normalizedEmail = req.body.email?.toLowerCase();
+
+  if (!normalizedEmail) {
+    return res.status(400).json({ success: false, message: "Email is required" });
+  }
+
+  const user = await User.findOne({ email: normalizedEmail });
+  if (!user) {
+    return res.status(404).json({ success: false, message: "Account not found" });
+  }
+  if (!user.password) {
+    return res.status(400).json({ success: false, message: "This account uses Google sign-in" });
+  }
+
+  const otp = generateOtp();
+  const otpHash = await bcrypt.hash(otp, 10);
+  const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
+
+  await sendPasswordResetOtpEmail({ to: normalizedEmail, otp });
+  await PasswordResetOtp.findOneAndUpdate(
+    { email: normalizedEmail },
+    {
+      email: normalizedEmail,
+      otpHash,
+      attempts: 0,
+      expiresAt,
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
+
+  return res.json({
+    success: true,
+    message: "Password reset OTP sent",
+    data: { email: normalizedEmail, expiresInMinutes: OTP_EXPIRY_MINUTES },
+  });
+}
+
+async function resetPassword(req, res) {
+  const normalizedEmail = req.body.email?.toLowerCase();
+  const { otp, password } = req.body;
+
+  if (!normalizedEmail || !otp || !password) {
+    return res.status(400).json({ success: false, message: "Email, OTP and new password are required" });
+  }
+  if (!/^\d{6}$/.test(String(otp))) {
+    return res.status(400).json({ success: false, message: "OTP must be 6 digits" });
+  }
+  if (password.length < 6) {
+    return res.status(400).json({ success: false, message: "Password must be at least 6 chars" });
+  }
+
+  const resetOtp = await PasswordResetOtp.findOne({ email: normalizedEmail });
+  if (!resetOtp) {
+    return res.status(404).json({ success: false, message: "OTP expired or reset request not found" });
+  }
+  if (resetOtp.expiresAt < new Date()) {
+    await PasswordResetOtp.deleteOne({ _id: resetOtp._id });
+    return res.status(410).json({ success: false, message: "OTP expired. Please try again" });
+  }
+  if (resetOtp.attempts >= OTP_MAX_ATTEMPTS) {
+    await PasswordResetOtp.deleteOne({ _id: resetOtp._id });
+    return res.status(429).json({ success: false, message: "Too many incorrect attempts. Please try again" });
+  }
+
+  const isOtpValid = await bcrypt.compare(String(otp), resetOtp.otpHash);
+  if (!isOtpValid) {
+    resetOtp.attempts += 1;
+    await resetOtp.save();
+    return res.status(401).json({ success: false, message: "Invalid OTP" });
+  }
+
+  const hashed = await bcrypt.hash(password, 10);
+  await User.updateOne(
+    { email: normalizedEmail },
+    {
+      $set: { password: hashed, authProvider: "local", isOnline: false, lastSeen: new Date() },
+      $unset: {
+        activeSessionId: "",
+        activeSessionStartedAt: "",
+        encryptionKeyBackup: "",
+      },
+    }
+  );
+  await PasswordResetOtp.deleteOne({ _id: resetOtp._id });
+
+  return res.json({ success: true, message: "Password reset successfully" });
+}
+
 async function me(req, res) {
   const user = await User.findById(req.user.id).select("-password");
   if (!user) {
@@ -267,4 +357,4 @@ async function me(req, res) {
   return res.json({ success: true, data: user });
 }
 
-module.exports = { signup, verifySignupOtp, login, googleLogin, logout, me };
+module.exports = { signup, verifySignupOtp, login, googleLogin, logout, requestPasswordReset, resetPassword, me };

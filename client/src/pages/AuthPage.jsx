@@ -10,6 +10,11 @@ export default function AuthPage({ mode = "login" }) {
   const [form, setForm] = useState({ fullName: "", email: "", password: "", bio: "", profilePic: "" });
   const [otp, setOtp] = useState("");
   const [otpSentTo, setOtpSentTo] = useState("");
+  const [forgotStep, setForgotStep] = useState("");
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotOtp, setForgotOtp] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [googleButtonReady, setGoogleButtonReady] = useState(false);
   const [authBusy, setAuthBusy] = useState(false);
@@ -18,9 +23,19 @@ export default function AuthPage({ mode = "login" }) {
   const [confirmChatPassphrase, setConfirmChatPassphrase] = useState("");
   const googleButtonRef = useRef(null);
   const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-  const { login, signup, verifySignupOtp, googleLogin, setupEncryptionPassphrase, logout } = useAuth();
+  const {
+    login,
+    signup,
+    verifySignupOtp,
+    googleLogin,
+    requestPasswordReset,
+    resetPassword,
+    setupEncryptionPassphrase,
+    logout,
+  } = useAuth();
   const navigate = useNavigate();
   const showOtpStep = isSignup && Boolean(otpSentTo);
+  const showForgotPassword = Boolean(forgotStep);
   const isGoogleRecoverySetup = googleRecoveryUser && !googleRecoveryUser.encryptionKeyBackup;
 
   const handleGoogleCredential = useCallback(
@@ -124,6 +139,46 @@ export default function AuthPage({ mode = "login" }) {
     e.preventDefault();
     if (authBusy) return;
 
+    if (showForgotPassword) {
+      try {
+        setAuthBusy(true);
+        if (forgotStep === "email") {
+          const data = await requestPasswordReset(forgotEmail);
+          setForgotEmail(data.data.email);
+          setForgotStep("reset");
+          setForgotOtp("");
+          setNewPassword("");
+          setConfirmNewPassword("");
+          toast.success("OTP sent to your email");
+          return;
+        }
+
+        if (newPassword !== confirmNewPassword) {
+          toast.error("New password match nahi ho raha");
+          return;
+        }
+
+        await resetPassword({ email: forgotEmail, otp: forgotOtp, password: newPassword });
+        toast.success("Password reset successfully. Please login.");
+        setForgotStep("");
+        setForgotEmail("");
+        setForgotOtp("");
+        setNewPassword("");
+        setConfirmNewPassword("");
+        setIsSignup(false);
+        setForm((prev) => ({ ...prev, email: forgotEmail, password: "" }));
+      } catch (error) {
+        const message =
+          error.response?.data?.message ||
+          error.message ||
+          (error.request ? "Backend server se connection nahi ho pa raha" : "Password reset failed");
+        toast.error(message);
+      } finally {
+        setAuthBusy(false);
+      }
+      return;
+    }
+
     if (googleRecoveryUser) {
       if (isGoogleRecoverySetup && chatPassphrase !== confirmChatPassphrase) {
         toast.error("Chat recovery passphrase match nahi ho raha");
@@ -217,6 +272,23 @@ export default function AuthPage({ mode = "login" }) {
     }
   }
 
+  async function resendPasswordResetOtp() {
+    if (authBusy) return;
+    try {
+      setAuthBusy(true);
+      await requestPasswordReset(forgotEmail);
+      setForgotOtp("");
+      toast.success("New OTP sent");
+    } catch (error) {
+      const message =
+        error.response?.data?.message ||
+        (error.request ? "Backend server se connection nahi ho pa raha" : "Unable to resend OTP");
+      toast.error(message);
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
   return (
     <div className="relative grid min-h-screen w-full grid-cols-1 overflow-x-hidden bg-black text-white md:grid-cols-2">
       <div className="pointer-events-none absolute inset-0">
@@ -239,10 +311,94 @@ export default function AuthPage({ mode = "login" }) {
           className="w-full min-w-0 max-w-[430px] rounded-xl border border-white/20 bg-black/45 p-4 shadow-2xl backdrop-blur-md sm:p-6"
         >
           <h2 className="mb-5 text-3xl font-semibold">
-            {googleRecoveryUser ? "Chat recovery" : showOtpStep ? "Verify OTP" : isSignup ? "Sign up" : "Login"}
+            {showForgotPassword
+              ? forgotStep === "email"
+                ? "Forgot password"
+                : "Reset password"
+              : googleRecoveryUser
+                ? "Chat recovery"
+                : showOtpStep
+                  ? "Verify OTP"
+                  : isSignup
+                    ? "Sign up"
+                    : "Login"}
           </h2>
 
-          {googleRecoveryUser ? (
+          {showForgotPassword ? (
+            <>
+              {forgotStep === "email" ? (
+                <>
+                  <p className="mb-4 text-sm leading-6 text-slate-300">
+                    Enter your account email. We will send a 6 digit OTP to reset your password.
+                  </p>
+                  <input
+                    className="mb-4 w-full rounded-md border border-white/25 bg-transparent px-3 py-2 text-slate-100 outline-none transition placeholder:text-slate-400 focus:border-violet-400"
+                    placeholder="Email Address"
+                    type="email"
+                    value={forgotEmail}
+                    onChange={(e) => setForgotEmail(e.target.value)}
+                  />
+                </>
+              ) : (
+                <>
+                  <p className="mb-4 text-sm leading-6 text-slate-300">
+                    Enter the 6 digit OTP sent to <span className="font-semibold text-white">{forgotEmail}</span>, then create a new password.
+                  </p>
+                  <input
+                    className="mb-3 w-full rounded-md border border-white/25 bg-transparent px-3 py-2 text-center text-lg tracking-[0.35em] text-slate-100 outline-none transition placeholder:text-slate-400 focus:border-violet-400"
+                    placeholder="000000"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={forgotOtp}
+                    onChange={(e) => setForgotOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  />
+                  <input
+                    className="mb-3 w-full rounded-md border border-white/25 bg-transparent px-3 py-2 text-slate-100 outline-none transition placeholder:text-slate-400 focus:border-violet-400"
+                    placeholder="New Password"
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                  />
+                  <input
+                    className="mb-4 w-full rounded-md border border-white/25 bg-transparent px-3 py-2 text-slate-100 outline-none transition placeholder:text-slate-400 focus:border-violet-400"
+                    placeholder="Confirm New Password"
+                    type="password"
+                    value={confirmNewPassword}
+                    onChange={(e) => setConfirmNewPassword(e.target.value)}
+                  />
+                </>
+              )}
+              <button
+                className="w-full rounded-md bg-gradient-to-r from-violet-500 to-fuchsia-500 py-2.5 font-medium text-white transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-70"
+                disabled={
+                  authBusy ||
+                  (forgotStep === "email" && !forgotEmail) ||
+                  (forgotStep === "reset" && (forgotOtp.length !== 6 || newPassword.length < 6 || confirmNewPassword.length < 6))
+                }
+              >
+                {authBusy ? "Please wait..." : forgotStep === "email" ? "Send OTP" : "Reset Password"}
+              </button>
+              <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-300">
+                {forgotStep === "reset" && (
+                  <button type="button" className="font-semibold text-violet-300 hover:underline" onClick={resendPasswordResetOtp}>
+                    Resend OTP
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="font-semibold text-slate-300 hover:text-white"
+                  onClick={() => {
+                    setForgotStep("");
+                    setForgotOtp("");
+                    setNewPassword("");
+                    setConfirmNewPassword("");
+                  }}
+                >
+                  Back to login
+                </button>
+              </div>
+            </>
+          ) : googleRecoveryUser ? (
             <>
               <p className="mb-4 text-sm leading-6 text-slate-300">
                 {isGoogleRecoverySetup
@@ -338,25 +494,40 @@ export default function AuthPage({ mode = "login" }) {
             </>
           )}
           <input
-            className={`mb-3 w-full rounded-md border border-white/25 bg-transparent px-3 py-2 text-slate-100 outline-none transition placeholder:text-slate-400 focus:border-violet-400 ${googleRecoveryUser || showOtpStep ? "hidden" : ""}`}
+            className={`mb-3 w-full rounded-md border border-white/25 bg-transparent px-3 py-2 text-slate-100 outline-none transition placeholder:text-slate-400 focus:border-violet-400 ${showForgotPassword || googleRecoveryUser || showOtpStep ? "hidden" : ""}`}
             placeholder="Email Address"
             type="email"
+            value={form.email}
             onChange={(e) => setForm({ ...form, email: e.target.value })}
           />
           <input
-            className={`mb-4 w-full rounded-md border border-white/25 bg-transparent px-3 py-2 text-slate-100 outline-none transition placeholder:text-slate-400 focus:border-violet-400 ${googleRecoveryUser || showOtpStep ? "hidden" : ""}`}
+            className={`mb-4 w-full rounded-md border border-white/25 bg-transparent px-3 py-2 text-slate-100 outline-none transition placeholder:text-slate-400 focus:border-violet-400 ${showForgotPassword || googleRecoveryUser || showOtpStep ? "hidden" : ""}`}
             placeholder="Password"
             type="password"
+            value={form.password}
             onChange={(e) => setForm({ ...form, password: e.target.value })}
           />
           <button
-            className={`w-full rounded-md bg-gradient-to-r from-violet-500 to-fuchsia-500 py-2.5 font-medium text-white transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-70 ${googleRecoveryUser ? "hidden" : ""}`}
+            className={`w-full rounded-md bg-gradient-to-r from-violet-500 to-fuchsia-500 py-2.5 font-medium text-white transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-70 ${showForgotPassword || googleRecoveryUser ? "hidden" : ""}`}
             disabled={authBusy || (showOtpStep && otp.length !== 6)}
           >
             {authBusy ? "Please wait..." : showOtpStep ? "Verify & Create Account" : isSignup ? "Send OTP" : "Login"}
           </button>
 
-          {!googleRecoveryUser && (showOtpStep ? (
+          {!showForgotPassword && !googleRecoveryUser && !isSignup && !showOtpStep && (
+            <button
+              type="button"
+              onClick={() => {
+                setForgotEmail(form.email);
+                setForgotStep("email");
+              }}
+              className="mt-3 text-xs font-semibold text-violet-300 hover:underline"
+            >
+              Forgot password?
+            </button>
+          )}
+
+          {!showForgotPassword && !googleRecoveryUser && (showOtpStep ? (
             <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-300">
               <button type="button" className="font-semibold text-violet-300 hover:underline" onClick={resendOtp}>
                 Resend OTP
@@ -393,7 +564,7 @@ export default function AuthPage({ mode = "login" }) {
             </>
           ))}
 
-          {!googleRecoveryUser && isSignup && !showOtpStep && (
+          {!showForgotPassword && !googleRecoveryUser && isSignup && !showOtpStep && (
             <label className="mt-4 flex items-center gap-2 text-xs text-slate-300">
               <input type="checkbox" checked={acceptTerms} onChange={(e) => setAcceptTerms(e.target.checked)} />
               Agree to the terms of use & privacy policy.
@@ -407,7 +578,7 @@ export default function AuthPage({ mode = "login" }) {
               setOtpSentTo("");
               setOtp("");
             }}
-            className={`mt-4 text-xs text-slate-300 ${googleRecoveryUser ? "hidden" : ""}`}
+            className={`mt-4 text-xs text-slate-300 ${showForgotPassword || googleRecoveryUser ? "hidden" : ""}`}
           >
             {isSignup ? "Already have an account? " : "New here? "}
             <span className="font-semibold text-violet-400 hover:underline">{isSignup ? "Login here" : "Create account"}</span>
