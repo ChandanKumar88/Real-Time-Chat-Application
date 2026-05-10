@@ -7,7 +7,7 @@ import { decryptText, encryptText, ensureLocalKeyPair, getLocalKeyPair } from ".
 const ChatContext = createContext(null);
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || "http://localhost:5000";
 const USERS_POLL_INTERVAL_MS = 8000;
-const MESSAGES_POLL_INTERVAL_MS = 3000;
+const MESSAGES_POLL_INTERVAL_MS = 900;
 const PRESENCE_PING_INTERVAL_MS = 20000;
 const TYPING_STOP_DELAY_MS = 1200;
 const TYPING_STALE_MS = 4000;
@@ -28,6 +28,7 @@ export function ChatProvider({ children }) {
   const typingStopTimersRef = useRef({});
   const typingStaleTimersRef = useRef({});
   const typingHttpSentAtRef = useRef({});
+  const messagesPollInFlightRef = useRef(false);
 
   const decryptMessage = useCallback(
     async (message, peerUser = selectedUserRef.current) => {
@@ -214,7 +215,9 @@ export function ChatProvider({ children }) {
   useEffect(() => {
     if (!user || user.encryptionPassphraseRequired || !selectedUser) return;
 
-    const intervalId = window.setInterval(async () => {
+    async function refreshActiveConversation() {
+      if (messagesPollInFlightRef.current) return;
+      messagesPollInFlightRef.current = true;
       try {
         const activeUserId = selectedUserRef.current?._id;
         if (!activeUserId) return;
@@ -223,18 +226,29 @@ export function ChatProvider({ children }) {
         const decryptedMessages = await decryptMessages(data.data || [], selectedUserRef.current);
         setMessages((prev) => {
           const nextMessages = decryptedMessages;
+          const pendingMessages = prev.filter((message) => message.pending);
           if (JSON.stringify(prev) === JSON.stringify(nextMessages)) {
             return prev;
           }
-          return nextMessages;
+          return [...nextMessages, ...pendingMessages];
         });
         setUsers((prev) => prev.map((u) => (u._id === activeUserId ? { ...u, unreadCount: 0 } : u)));
       } catch {
         // Keep silent here; socket or next poll may recover automatically.
+      } finally {
+        messagesPollInFlightRef.current = false;
       }
-    }, MESSAGES_POLL_INTERVAL_MS);
+    }
 
-    return () => window.clearInterval(intervalId);
+    const intervalId = window.setInterval(refreshActiveConversation, MESSAGES_POLL_INTERVAL_MS);
+    window.addEventListener("focus", refreshActiveConversation);
+    document.addEventListener("visibilitychange", refreshActiveConversation);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", refreshActiveConversation);
+      document.removeEventListener("visibilitychange", refreshActiveConversation);
+    };
   }, [user, selectedUser, decryptMessages]);
 
   useEffect(() => {
@@ -285,9 +299,6 @@ export function ChatProvider({ children }) {
       throw new Error("Encrypted chat key backup original browser se create karo.");
     }
 
-    const encryptedPayload = payload.text
-      ? await encryptText({ text: payload.text, myUserId: user._id, peerPublicKey: targetUser?.publicKey })
-      : "";
     const tempId = `temp-${Date.now()}`;
     const optimisticMessage = {
       _id: tempId,
@@ -295,9 +306,9 @@ export function ChatProvider({ children }) {
       receiverId: targetUserId,
       replyTo: payload.replyTo || null,
       text: payload.text || "",
-      encryptedPayload,
-      encrypted: Boolean(encryptedPayload),
-      encryptionVersion: encryptedPayload ? 1 : 0,
+      encryptedPayload: "",
+      encrypted: false,
+      encryptionVersion: 0,
       senderPublicKey: user.publicKey || localKeyPair?.publicKey || "",
       receiverPublicKey: targetUser?.publicKey || "",
       image: payload.image || "",
@@ -310,9 +321,16 @@ export function ChatProvider({ children }) {
     setMessages((prev) => [...prev, optimisticMessage]);
 
     try {
+      const encryptedPayload = payload.text
+        ? await encryptText({ text: payload.text, myUserId: user._id, peerPublicKey: targetUser?.publicKey })
+        : "";
       const { data } = await api.post(`/messages/${targetUserId}`, { ...payload, text: "", encryptedPayload });
       const decryptedMessage = await decryptMessage(data.data, targetUser);
-      setMessages((prev) => prev.map((m) => (m._id === tempId ? { ...decryptedMessage, text: payload.text || decryptedMessage.text } : m)));
+      setMessages((prev) => {
+        const confirmedMessage = { ...decryptedMessage, text: payload.text || decryptedMessage.text };
+        const withoutTempOrDuplicate = prev.filter((m) => m._id !== tempId && m._id !== confirmedMessage._id);
+        return [...withoutTempOrDuplicate, confirmedMessage].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+      });
       return decryptedMessage;
     } catch (error) {
       setMessages((prev) => prev.filter((m) => m._id !== tempId));
