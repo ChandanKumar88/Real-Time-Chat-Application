@@ -279,17 +279,6 @@ export default function ChatContainer({
                       </video>
                     </div>
                   )}
-                  {isMine && !m.pending && (
-                    <button
-                      type="button"
-                      title="Delete message"
-                      onClick={() => onDeleteMessage?.(m._id)}
-                      className="mt-2 inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] text-white/90 hover:bg-black/10"
-                    >
-                      <FiTrash2 />
-                      Delete
-                    </button>
-                  )}
                 </div>
                 <div className={`mt-1 flex items-center gap-1.5 ${isMine ? "flex-row-reverse" : "flex-row"}`}>
                   <ProfileAvatar src={avatarSrc} name={isMine ? user?.fullName : selectedUser?.fullName} className="h-5 w-5 rounded-full object-cover opacity-90" />
