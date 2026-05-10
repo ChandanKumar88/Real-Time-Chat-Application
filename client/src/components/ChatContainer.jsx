@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { FiChevronDown, FiCornerUpLeft, FiGrid, FiImage, FiLock, FiSend, FiTrash2, FiX } from "react-icons/fi";
 import logoIcon from "../assets/logo_icon.svg";
@@ -42,6 +42,28 @@ export default function ChatContainer({
     if (!container) return;
     container.scrollTop = container.scrollHeight;
   }, [messages, selectedUser]);
+
+  useEffect(() => {
+    if (!openMenuId) return;
+
+    function closeMenu() {
+      setOpenMenuId("");
+    }
+
+    function handleKeyDown(event) {
+      if (event.key === "Escape") closeMenu();
+    }
+
+    document.addEventListener("click", closeMenu);
+    document.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("scroll", closeMenu, true);
+
+    return () => {
+      document.removeEventListener("click", closeMenu);
+      document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("scroll", closeMenu, true);
+    };
+  }, [openMenuId]);
 
   function formatMessageTime(value) {
     if (!value) return "";
@@ -195,6 +217,7 @@ export default function ChatContainer({
                   </button>
                   {openMenuId === m._id && (
                     <div
+                      onClick={(event) => event.stopPropagation()}
                       className={`absolute top-0 z-30 min-w-[148px] overflow-hidden rounded-xl border py-1.5 text-sm shadow-2xl backdrop-blur-md ${
                         isMine ? "right-[calc(100%+8px)]" : "left-[calc(100%+8px)]"
                       } ${
