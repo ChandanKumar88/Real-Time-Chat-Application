@@ -304,7 +304,6 @@ export default function HomePage() {
       function cleanup() {
         window.clearTimeout(timeoutId);
         activeSocket.off("connect", handleConnect);
-        activeSocket.off("connect_error", handleConnectError);
       }
 
       function handleConnect() {
@@ -312,13 +311,7 @@ export default function HomePage() {
         resolve(activeSocket);
       }
 
-      function handleConnectError() {
-        cleanup();
-        reject(new Error("Socket connect nahi ho pa raha. Server restart karke try karo."));
-      }
-
       activeSocket.once("connect", handleConnect);
-      activeSocket.once("connect_error", handleConnectError);
     });
   }
 

@@ -114,10 +114,11 @@ export function ChatProvider({ children }) {
   useEffect(() => {
     if (!user || user.encryptionPassphraseRequired) return;
     const s = io(SOCKET_URL, {
-      transports: ["websocket", "polling"],
+      transports: ["polling", "websocket"],
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
+      timeout: 10000,
     });
     const announceOnline = () => {
       s.emit("user:online", user._id);
