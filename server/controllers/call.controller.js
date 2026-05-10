@@ -62,7 +62,7 @@ async function listCallEvents(req, res) {
 
   const events = await CallEvent.find({
     to: req.user.id,
-    createdAt: { $gt: safeSince },
+    createdAt: { $gte: safeSince },
     expiresAt: { $gt: new Date() },
   })
     .sort({ createdAt: 1 })

@@ -75,6 +75,7 @@ export default function HomePage() {
   const callIdRef = useRef("");
   const lastCallEventAtRef = useRef(new Date(Date.now() - 60_000).toISOString());
   const processedCallEventsRef = useRef(new Set());
+  const pendingLocalIceCandidatesRef = useRef([]);
 
   useEffect(() => {
     if (user?.encryptionPassphraseRequired) return;
@@ -276,6 +277,7 @@ export default function HomePage() {
     callPeerIdRef.current = "";
     callIdRef.current = "";
     queuedIceCandidatesRef.current = [];
+    pendingLocalIceCandidatesRef.current = [];
     stopCallMedia();
     setCallState({ status: "idle", direction: "", peer: null, muted: false });
   }
@@ -294,6 +296,19 @@ export default function HomePage() {
     }
 
     return data.data;
+  }
+
+  function normalizeIceCandidate(candidate) {
+    if (!candidate) return null;
+    return typeof candidate.toJSON === "function" ? candidate.toJSON() : candidate;
+  }
+
+  async function flushLocalIceCandidates(peerId) {
+    if (!peerId || !callIdRef.current || pendingLocalIceCandidatesRef.current.length === 0) return;
+
+    const candidates = pendingLocalIceCandidatesRef.current;
+    pendingLocalIceCandidatesRef.current = [];
+    await Promise.all(candidates.map((candidate) => sendCallSignal("ice", peerId, { candidate }).catch(() => null)));
   }
 
   function notifyCallEnd() {
@@ -323,7 +338,13 @@ export default function HomePage() {
 
     peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
-        sendCallSignal("ice", peerId, { candidate: event.candidate }).catch(() => null);
+        const candidate = normalizeIceCandidate(event.candidate);
+        if (!candidate) return;
+        if (!callIdRef.current) {
+          pendingLocalIceCandidatesRef.current.push(candidate);
+          return;
+        }
+        sendCallSignal("ice", peerId, { candidate }).catch(() => null);
       }
     };
 
@@ -331,6 +352,8 @@ export default function HomePage() {
       const [remoteStream] = event.streams;
       if (!remoteStream || !remoteAudioRef.current) return;
       remoteAudioRef.current.srcObject = remoteStream;
+      remoteAudioRef.current.muted = false;
+      remoteAudioRef.current.volume = 1;
       remoteAudioRef.current.play().catch(() => null);
     };
 
@@ -370,6 +393,7 @@ export default function HomePage() {
       await peerConnection.setLocalDescription(offer);
 
       await sendCallSignal("invite", selectedUser._id, { caller: getCallerSnapshot(), offer });
+      await flushLocalIceCandidates(selectedUser._id);
     } catch (error) {
       resetCall();
       toast.error(error?.message || "Audio call start nahi ho pa rahi.");
@@ -390,6 +414,7 @@ export default function HomePage() {
       const answer = await peerConnection.createAnswer();
       await peerConnection.setLocalDescription(answer);
       await sendCallSignal("accept", peerId, { answer });
+      await flushLocalIceCandidates(peerId);
 
       setCallState((prev) => ({ ...prev, status: "active" }));
       pendingOfferRef.current = null;
