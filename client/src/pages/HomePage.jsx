@@ -39,6 +39,7 @@ export default function HomePage() {
     markSeen,
     deleteMessage,
     socket,
+    socketConnected,
     typingUsers,
     emitTyping,
     stopTyping,
@@ -71,6 +72,7 @@ export default function HomePage() {
   const queuedIceCandidatesRef = useRef([]);
   const callStateRef = useRef(callState);
   const usersRef = useRef(users);
+  const socketRef = useRef(socket);
 
   useEffect(() => {
     if (user?.encryptionPassphraseRequired) return;
@@ -84,6 +86,10 @@ export default function HomePage() {
   useEffect(() => {
     usersRef.current = users;
   }, [users]);
+
+  useEffect(() => {
+    socketRef.current = socket;
+  }, [socket]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
@@ -277,7 +283,43 @@ export default function HomePage() {
 
   function notifyCallEnd() {
     const peerId = callPeerIdRef.current;
-    if (peerId) socket?.emit("call:end", { to: peerId });
+    if (peerId) socketRef.current?.emit("call:end", { to: peerId });
+  }
+
+  function waitForSocketConnection(timeoutMs = 5000) {
+    const activeSocket = socketRef.current;
+    if (!activeSocket) {
+      return Promise.reject(new Error("Realtime server se connection ready nahi hai. Page reload karke try karo."));
+    }
+    if (activeSocket.connected) return Promise.resolve(activeSocket);
+
+    activeSocket.connect();
+
+    return new Promise((resolve, reject) => {
+      const timeoutId = window.setTimeout(() => {
+        cleanup();
+        reject(new Error("Realtime server connect nahi ho pa raha. Server running hai ya nahi check karo."));
+      }, timeoutMs);
+
+      function cleanup() {
+        window.clearTimeout(timeoutId);
+        activeSocket.off("connect", handleConnect);
+        activeSocket.off("connect_error", handleConnectError);
+      }
+
+      function handleConnect() {
+        cleanup();
+        resolve(activeSocket);
+      }
+
+      function handleConnectError() {
+        cleanup();
+        reject(new Error("Socket connect nahi ho pa raha. Server restart karke try karo."));
+      }
+
+      activeSocket.once("connect", handleConnect);
+      activeSocket.once("connect_error", handleConnectError);
+    });
   }
 
   async function flushQueuedIceCandidates() {
@@ -301,7 +343,7 @@ export default function HomePage() {
 
     peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
-        socket?.emit("call:ice", { to: peerId, candidate: event.candidate });
+        socketRef.current?.emit("call:ice", { to: peerId, candidate: event.candidate });
       }
     };
 
@@ -332,16 +374,13 @@ export default function HomePage() {
       toast.error("User offline hai, audio call abhi start nahi ho sakti.");
       return;
     }
-    if (!socket?.connected) {
-      toast.error("Socket connect nahi hai. Page refresh karke try karo.");
-      return;
-    }
     if (callStateRef.current.status !== "idle") {
       toast.error("Ek call already active hai.");
       return;
     }
 
     try {
+      const activeSocket = await waitForSocketConnection();
       callPeerIdRef.current = selectedUser._id;
       queuedIceCandidatesRef.current = [];
       setCallState({ status: "calling", direction: "outgoing", peer: selectedUser, muted: false });
@@ -350,7 +389,7 @@ export default function HomePage() {
       const offer = await peerConnection.createOffer();
       await peerConnection.setLocalDescription(offer);
 
-      socket.emit("call:invite", {
+      activeSocket.emit("call:invite", {
         to: selectedUser._id,
         caller: getCallerSnapshot(),
         offer,
@@ -364,9 +403,10 @@ export default function HomePage() {
   async function acceptAudioCall() {
     const peerId = callPeerIdRef.current;
     const offer = pendingOfferRef.current;
-    if (!peerId || !offer || !socket?.connected) return;
+    if (!peerId || !offer) return;
 
     try {
+      const activeSocket = await waitForSocketConnection();
       setCallState((prev) => ({ ...prev, status: "connecting" }));
       const peerConnection = await createPeerConnection(peerId);
       await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
@@ -374,12 +414,12 @@ export default function HomePage() {
 
       const answer = await peerConnection.createAnswer();
       await peerConnection.setLocalDescription(answer);
-      socket.emit("call:accept", { to: peerId, answer });
+      activeSocket.emit("call:accept", { to: peerId, answer });
 
       setCallState((prev) => ({ ...prev, status: "active" }));
       pendingOfferRef.current = null;
     } catch (error) {
-      socket.emit("call:reject", { to: peerId, reason: "failed" });
+      socketRef.current?.emit("call:reject", { to: peerId, reason: "failed" });
       resetCall();
       toast.error(error?.message || "Call accept nahi ho pa rahi.");
     }
@@ -387,7 +427,7 @@ export default function HomePage() {
 
   function rejectAudioCall() {
     const peerId = callPeerIdRef.current;
-    if (peerId) socket?.emit("call:reject", { to: peerId, reason: "rejected" });
+    if (peerId) socketRef.current?.emit("call:reject", { to: peerId, reason: "rejected" });
     resetCall();
   }
 
@@ -411,7 +451,7 @@ export default function HomePage() {
       if (!from || !offer) return;
 
       if (callStateRef.current.status !== "idle") {
-        socket.emit("call:reject", { to: from, reason: "busy" });
+        socketRef.current?.emit("call:reject", { to: from, reason: "busy" });
         return;
       }
 
@@ -629,7 +669,7 @@ export default function HomePage() {
                     : callState.status === "connecting"
                       ? "Connecting..."
                       : callState.muted
-                        ? "Audio call active · Muted"
+                        ? "Audio call active - Muted"
                         : "Audio call active"}
               </p>
             </div>
@@ -738,7 +778,7 @@ export default function HomePage() {
           theme={theme}
           onOpenMedia={() => setIsMediaOpen(true)}
           onStartAudioCall={startAudioCall}
-          isCallDisabled={callState.status !== "idle" || !selectedUser?.isOnline}
+          isCallDisabled={callState.status !== "idle" || !selectedUser?.isOnline || (!socket && !socketConnected)}
           onPreviewMedia={openPreview}
           onReplyMessage={setReplyToMessage}
           onCancelReply={() => setReplyToMessage(null)}

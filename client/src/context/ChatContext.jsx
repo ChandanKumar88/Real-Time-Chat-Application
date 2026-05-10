@@ -20,6 +20,7 @@ export function ChatProvider({ children }) {
   const [selectedUser, setSelectedUser] = useState(null);
   const [messages, setMessages] = useState([]);
   const [socket, setSocket] = useState(null);
+  const [socketConnected, setSocketConnected] = useState(false);
   const [typingUsers, setTypingUsers] = useState({});
   const selectedUserRef = useRef(null);
   const usersRef = useRef([]);
@@ -122,8 +123,17 @@ export function ChatProvider({ children }) {
       s.emit("user:online", user._id);
       api.patch("/users/presence/online").catch(() => null);
     };
+    const handleConnect = () => {
+      setSocketConnected(true);
+      announceOnline();
+    };
+    const handleDisconnect = () => {
+      setSocketConnected(false);
+    };
 
-    s.on("connect", announceOnline);
+    s.on("connect", handleConnect);
+    s.on("disconnect", handleDisconnect);
+    s.on("connect_error", handleDisconnect);
     s.io.on("reconnect", announceOnline);
     s.on("presence:update", (onlineIds) => {
       onlineUserIdsRef.current = new Set(onlineIds);
@@ -178,10 +188,15 @@ export function ChatProvider({ children }) {
     return () => {
       window.clearInterval(pingInterval);
       document.removeEventListener("visibilitychange", announceOnline);
+      s.off("connect", handleConnect);
+      s.off("disconnect", handleDisconnect);
+      s.off("connect_error", handleDisconnect);
       s.io.off("reconnect", announceOnline);
       Object.values(typingStopTimers).forEach(window.clearTimeout);
       Object.values(typingStaleTimers).forEach(window.clearTimeout);
       s.disconnect();
+      setSocketConnected(false);
+      setSocket(null);
     };
   }, [user, decryptMessage]);
 
@@ -351,13 +366,14 @@ export function ChatProvider({ children }) {
       markSeen,
       deleteMessage,
       socket,
+      socketConnected,
       setUsers,
       typingUsers,
       emitTyping,
       stopTyping,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [users, selectedUser, messages, socket, typingUsers]
+    [users, selectedUser, messages, socket, socketConnected, typingUsers]
   );
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
