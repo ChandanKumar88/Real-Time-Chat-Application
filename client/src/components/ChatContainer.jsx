@@ -32,6 +32,9 @@ export default function ChatContainer({
   const imageInputRef = useRef(null);
   const textInputRef = useRef(null);
   const messagesContainerRef = useRef(null);
+  const longPressTimerRef = useRef(null);
+  const longPressStateRef = useRef(null);
+  const ignoreNextDocumentClickRef = useRef(false);
   const [mediaError, setMediaError] = useState("");
   const [openMenuId, setOpenMenuId] = useState("");
   const [swipeState, setSwipeState] = useState(null);
@@ -47,6 +50,10 @@ export default function ChatContainer({
     if (!openMenuId) return;
 
     function closeMenu() {
+      if (ignoreNextDocumentClickRef.current) {
+        ignoreNextDocumentClickRef.current = false;
+        return;
+      }
       setOpenMenuId("");
     }
 
@@ -64,6 +71,13 @@ export default function ChatContainer({
       window.removeEventListener("scroll", closeMenu, true);
     };
   }, [openMenuId]);
+
+  useEffect(
+    () => () => {
+      window.clearTimeout(longPressTimerRef.current);
+    },
+    []
+  );
 
   function formatMessageTime(value) {
     if (!value) return "";
@@ -102,13 +116,43 @@ export default function ChatContainer({
     window.setTimeout(() => textInputRef.current?.focus(), 0);
   }
 
+  function clearLongPressTimer() {
+    window.clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = null;
+  }
+
   function handleTouchStart(event, message) {
     if (event.touches.length !== 1) return;
     const touch = event.touches[0];
+    clearLongPressTimer();
+    longPressStateRef.current = {
+      id: message._id,
+      startX: touch.clientX,
+      startY: touch.clientY,
+      triggered: false,
+    };
+    longPressTimerRef.current = window.setTimeout(() => {
+      if (longPressStateRef.current?.id !== message._id) return;
+      longPressStateRef.current.triggered = true;
+      ignoreNextDocumentClickRef.current = true;
+      setSwipeState(null);
+      setOpenMenuId(message._id);
+      navigator.vibrate?.(20);
+    }, 550);
     setSwipeState({ id: message._id, startX: touch.clientX, startY: touch.clientY, offset: 0 });
   }
 
   function handleTouchMove(event, message) {
+    const activeLongPress = longPressStateRef.current;
+    if (activeLongPress?.id === message._id && event.touches.length === 1) {
+      const touch = event.touches[0];
+      const dx = touch.clientX - activeLongPress.startX;
+      const dy = touch.clientY - activeLongPress.startY;
+      if (Math.hypot(dx, dy) > 10) {
+        clearLongPressTimer();
+      }
+    }
+
     if (!swipeState || swipeState.id !== message._id || event.touches.length !== 1) return;
     const touch = event.touches[0];
     const dx = touch.clientX - swipeState.startX;
@@ -124,9 +168,23 @@ export default function ChatContainer({
   }
 
   function handleTouchEnd(message) {
+    const wasLongPressed = longPressStateRef.current?.id === message._id && longPressStateRef.current.triggered;
+    clearLongPressTimer();
+    longPressStateRef.current = null;
+    if (wasLongPressed) {
+      setSwipeState(null);
+      return;
+    }
+
     if (swipeState?.id === message._id && swipeState.offset >= 54) {
       selectReply(message);
     }
+    setSwipeState(null);
+  }
+
+  function cancelTouchActions() {
+    clearLongPressTimer();
+    longPressStateRef.current = null;
     setSwipeState(null);
   }
 
@@ -189,7 +247,11 @@ export default function ChatContainer({
               onTouchStart={(event) => handleTouchStart(event, m)}
               onTouchMove={(event) => handleTouchMove(event, m)}
               onTouchEnd={() => handleTouchEnd(m)}
-              onTouchCancel={() => setSwipeState(null)}
+              onTouchCancel={cancelTouchActions}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                setOpenMenuId(m._id);
+              }}
             >
               {swipeOffset > 10 && (
                 <div className={`absolute left-2 top-1/2 -translate-y-1/2 rounded-full p-2 ${isDark ? "bg-white/10 text-violet-200" : "bg-violet-100 text-violet-700"}`}>
@@ -218,8 +280,8 @@ export default function ChatContainer({
                   {openMenuId === m._id && (
                     <div
                       onClick={(event) => event.stopPropagation()}
-                      className={`absolute top-0 z-30 min-w-[148px] overflow-hidden rounded-xl border py-1.5 text-sm shadow-2xl backdrop-blur-md ${
-                        isMine ? "right-[calc(100%+8px)]" : "left-[calc(100%+8px)]"
+                      className={`fixed bottom-[84px] left-3 right-3 z-50 overflow-hidden rounded-2xl border py-1.5 text-sm shadow-2xl backdrop-blur-md sm:absolute sm:bottom-auto sm:left-auto sm:right-auto sm:top-0 sm:z-30 sm:min-w-[148px] sm:rounded-xl ${
+                        isMine ? "sm:right-[calc(100%+8px)]" : "sm:left-[calc(100%+8px)]"
                       } ${
                         isDark ? "border-white/10 bg-[#15151c] text-slate-100" : "border-slate-200 bg-white text-slate-800"
                       }`}
