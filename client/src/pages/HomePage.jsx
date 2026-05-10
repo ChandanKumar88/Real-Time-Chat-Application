@@ -25,6 +25,7 @@ import bgImage from "../assets/bgImage.svg";
 const CALL_ICE_SERVERS = [
   { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] },
 ];
+const CALL_EVENT_POLL_INTERVAL_MS = 900;
 
 export default function HomePage() {
   const { user, logout, setupEncryptionPassphrase } = useAuth();
@@ -38,8 +39,6 @@ export default function HomePage() {
     sendMessage,
     markSeen,
     deleteMessage,
-    socket,
-    socketConnected,
     typingUsers,
     emitTyping,
     stopTyping,
@@ -72,7 +71,9 @@ export default function HomePage() {
   const queuedIceCandidatesRef = useRef([]);
   const callStateRef = useRef(callState);
   const usersRef = useRef(users);
-  const socketRef = useRef(socket);
+  const callIdRef = useRef("");
+  const lastCallEventAtRef = useRef(new Date(Date.now() - 60_000).toISOString());
+  const processedCallEventsRef = useRef(new Set());
 
   useEffect(() => {
     if (user?.encryptionPassphraseRequired) return;
@@ -86,10 +87,6 @@ export default function HomePage() {
   useEffect(() => {
     usersRef.current = users;
   }, [users]);
-
-  useEffect(() => {
-    socketRef.current = socket;
-  }, [socket]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
@@ -276,43 +273,32 @@ export default function HomePage() {
     peerConnectionRef.current = null;
     pendingOfferRef.current = null;
     callPeerIdRef.current = "";
+    callIdRef.current = "";
     queuedIceCandidatesRef.current = [];
     stopCallMedia();
     setCallState({ status: "idle", direction: "", peer: null, muted: false });
   }
 
-  function notifyCallEnd() {
-    const peerId = callPeerIdRef.current;
-    if (peerId) socketRef.current?.emit("call:end", { to: peerId });
+  async function sendCallSignal(type, to, payload = {}) {
+    if (!to) return null;
+
+    const { data } = await api.post(`/calls/${type}`, {
+      to,
+      callId: callIdRef.current,
+      ...payload,
+    });
+
+    if (data.data?.callId) {
+      callIdRef.current = data.data.callId;
+    }
+
+    return data.data;
   }
 
-  function waitForSocketConnection(timeoutMs = 5000) {
-    const activeSocket = socketRef.current;
-    if (!activeSocket) {
-      return Promise.reject(new Error("Realtime server se connection ready nahi hai. Page reload karke try karo."));
-    }
-    if (activeSocket.connected) return Promise.resolve(activeSocket);
-
-    activeSocket.connect();
-
-    return new Promise((resolve, reject) => {
-      const timeoutId = window.setTimeout(() => {
-        cleanup();
-        reject(new Error("Realtime server connect nahi ho pa raha. Server running hai ya nahi check karo."));
-      }, timeoutMs);
-
-      function cleanup() {
-        window.clearTimeout(timeoutId);
-        activeSocket.off("connect", handleConnect);
-      }
-
-      function handleConnect() {
-        cleanup();
-        resolve(activeSocket);
-      }
-
-      activeSocket.once("connect", handleConnect);
-    });
+  function notifyCallEnd() {
+    const peerId = callPeerIdRef.current;
+    if (!peerId) return;
+    sendCallSignal("end", peerId).catch(() => null);
   }
 
   async function flushQueuedIceCandidates() {
@@ -336,7 +322,7 @@ export default function HomePage() {
 
     peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
-        socketRef.current?.emit("call:ice", { to: peerId, candidate: event.candidate });
+        sendCallSignal("ice", peerId, { candidate: event.candidate }).catch(() => null);
       }
     };
 
@@ -373,8 +359,8 @@ export default function HomePage() {
     }
 
     try {
-      const activeSocket = await waitForSocketConnection();
       callPeerIdRef.current = selectedUser._id;
+      callIdRef.current = "";
       queuedIceCandidatesRef.current = [];
       setCallState({ status: "calling", direction: "outgoing", peer: selectedUser, muted: false });
 
@@ -382,11 +368,7 @@ export default function HomePage() {
       const offer = await peerConnection.createOffer();
       await peerConnection.setLocalDescription(offer);
 
-      activeSocket.emit("call:invite", {
-        to: selectedUser._id,
-        caller: getCallerSnapshot(),
-        offer,
-      });
+      await sendCallSignal("invite", selectedUser._id, { caller: getCallerSnapshot(), offer });
     } catch (error) {
       resetCall();
       toast.error(error?.message || "Audio call start nahi ho pa rahi.");
@@ -399,7 +381,6 @@ export default function HomePage() {
     if (!peerId || !offer) return;
 
     try {
-      const activeSocket = await waitForSocketConnection();
       setCallState((prev) => ({ ...prev, status: "connecting" }));
       const peerConnection = await createPeerConnection(peerId);
       await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
@@ -407,12 +388,12 @@ export default function HomePage() {
 
       const answer = await peerConnection.createAnswer();
       await peerConnection.setLocalDescription(answer);
-      activeSocket.emit("call:accept", { to: peerId, answer });
+      await sendCallSignal("accept", peerId, { answer });
 
       setCallState((prev) => ({ ...prev, status: "active" }));
       pendingOfferRef.current = null;
     } catch (error) {
-      socketRef.current?.emit("call:reject", { to: peerId, reason: "failed" });
+      sendCallSignal("reject", peerId, { reason: "failed" }).catch(() => null);
       resetCall();
       toast.error(error?.message || "Call accept nahi ho pa rahi.");
     }
@@ -420,7 +401,7 @@ export default function HomePage() {
 
   function rejectAudioCall() {
     const peerId = callPeerIdRef.current;
-    if (peerId) socketRef.current?.emit("call:reject", { to: peerId, reason: "rejected" });
+    if (peerId) sendCallSignal("reject", peerId, { reason: "rejected" }).catch(() => null);
     resetCall();
   }
 
@@ -437,87 +418,106 @@ export default function HomePage() {
     setCallState((prev) => ({ ...prev, muted: nextMuted }));
   }
 
-  useEffect(() => {
-    if (!socket) return;
+  async function handleCallEvent(event) {
+    if (!event?._id || processedCallEventsRef.current.has(event._id)) return;
+    processedCallEventsRef.current.add(event._id);
 
-    function handleIncomingCall({ from, caller, offer }) {
-      if (!from || !offer) return;
+    const from = event.from?.toString?.() || event.from;
+    const payload = event.payload || {};
+
+    if (event.type === "invite") {
+      if (!from || !payload.offer) return;
 
       if (callStateRef.current.status !== "idle") {
-        socketRef.current?.emit("call:reject", { to: from, reason: "busy" });
+        await api.post("/calls/reject", { to: from, callId: event.callId, reason: "busy" }).catch(() => null);
         return;
       }
 
       callPeerIdRef.current = from;
-      pendingOfferRef.current = offer;
+      callIdRef.current = event.callId;
+      pendingOfferRef.current = payload.offer;
       queuedIceCandidatesRef.current = [];
       setCallState({
         status: "ringing",
         direction: "incoming",
-        peer: getCallPeer(from, caller),
+        peer: getCallPeer(from, payload.caller),
         muted: false,
       });
+      return;
     }
 
-    async function handleCallAccepted({ from, answer }) {
-      if (!from || from !== callPeerIdRef.current || !answer || !peerConnectionRef.current) return;
+    if (event.callId !== callIdRef.current || from !== callPeerIdRef.current) return;
 
+    if (event.type === "accept") {
+      if (!payload.answer || !peerConnectionRef.current) return;
       try {
-        await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(answer));
+        await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(payload.answer));
         await flushQueuedIceCandidates();
         setCallState((prev) => ({ ...prev, status: "active" }));
       } catch {
         resetCall();
         toast.error("Call connect nahi ho paayi.");
       }
+      return;
     }
 
-    async function handleRemoteIce({ from, candidate }) {
-      if (!from || from !== callPeerIdRef.current || !candidate) return;
+    if (event.type === "ice") {
+      if (!payload.candidate) return;
       const peerConnection = peerConnectionRef.current;
-
       if (!peerConnection?.remoteDescription) {
-        queuedIceCandidatesRef.current.push(candidate);
+        queuedIceCandidatesRef.current.push(payload.candidate);
         return;
       }
-
-      await peerConnection.addIceCandidate(new RTCIceCandidate(candidate)).catch(() => null);
+      await peerConnection.addIceCandidate(new RTCIceCandidate(payload.candidate)).catch(() => null);
+      return;
     }
 
-    function handleCallRejected({ reason }) {
-      const message = reason === "busy" ? "User dusri call mein busy hai." : "Audio call reject ho gayi.";
+    if (event.type === "reject") {
+      const message = payload.reason === "busy" ? "User dusri call mein busy hai." : "Audio call reject ho gayi.";
       resetCall();
       toast.error(message);
+      return;
     }
 
-    function handleCallEnded() {
-      if (callStateRef.current.status !== "idle") {
-        resetCall();
-        toast("Audio call ended");
+    if (event.type === "end" && callStateRef.current.status !== "idle") {
+      resetCall();
+      toast("Audio call ended");
+    }
+  }
+
+  useEffect(() => {
+    if (!user || user.encryptionPassphraseRequired) return;
+
+    let stopped = false;
+    let polling = false;
+
+    async function pollCallEvents() {
+      if (polling || stopped) return;
+      polling = true;
+      try {
+        const { data } = await api.get("/calls/events", {
+          params: { since: lastCallEventAtRef.current },
+        });
+        for (const event of data.data || []) {
+          if (stopped) break;
+          await handleCallEvent(event);
+        }
+        if (data.nextSince) lastCallEventAtRef.current = data.nextSince;
+      } catch {
+        // Polling retries on the next tick.
+      } finally {
+        polling = false;
       }
     }
 
-    function handleCallUnavailable() {
-      resetCall();
-      toast.error("User online nahi hai.");
-    }
-
-    socket.on("call:incoming", handleIncomingCall);
-    socket.on("call:accepted", handleCallAccepted);
-    socket.on("call:ice", handleRemoteIce);
-    socket.on("call:rejected", handleCallRejected);
-    socket.on("call:ended", handleCallEnded);
-    socket.on("call:unavailable", handleCallUnavailable);
+    pollCallEvents();
+    const intervalId = window.setInterval(pollCallEvents, CALL_EVENT_POLL_INTERVAL_MS);
 
     return () => {
-      socket.off("call:incoming", handleIncomingCall);
-      socket.off("call:accepted", handleCallAccepted);
-      socket.off("call:ice", handleRemoteIce);
-      socket.off("call:rejected", handleCallRejected);
-      socket.off("call:ended", handleCallEnded);
-      socket.off("call:unavailable", handleCallUnavailable);
+      stopped = true;
+      window.clearInterval(intervalId);
     };
-  }, [socket, selectedUser]);
+  }, [user?._id, user?.encryptionPassphraseRequired]);
 
   useEffect(
     () => () => {
@@ -771,7 +771,7 @@ export default function HomePage() {
           theme={theme}
           onOpenMedia={() => setIsMediaOpen(true)}
           onStartAudioCall={startAudioCall}
-          isCallDisabled={callState.status !== "idle" || !selectedUser?.isOnline || (!socket && !socketConnected)}
+          isCallDisabled={callState.status !== "idle" || !selectedUser?.isOnline}
           onPreviewMedia={openPreview}
           onReplyMessage={setReplyToMessage}
           onCancelReply={() => setReplyToMessage(null)}
