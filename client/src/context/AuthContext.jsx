@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import toast from "react-hot-toast";
 import { api } from "../services/api";
 import { ensureRecoverableKeyPair, getLocalKeyPair } from "../utils/e2ee";
 
@@ -47,6 +48,16 @@ export function AuthProvider({ children }) {
       encryptionKeyBackup,
     });
     return { ...data.data, encryptionRecoveryRequired: false };
+  }, []);
+
+  useEffect(() => {
+    function handleSessionReplaced(event) {
+      setUser(null);
+      toast.error(event.detail?.message || "This account was logged in on another device.");
+    }
+
+    window.addEventListener("quickchat:session-replaced", handleSessionReplaced);
+    return () => window.removeEventListener("quickchat:session-replaced", handleSessionReplaced);
   }, []);
 
   useEffect(() => {

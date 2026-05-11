@@ -10,7 +10,6 @@ const { sendPasswordResetOtpEmail, sendSignupOtpEmail } = require("../utils/emai
 
 const OTP_EXPIRY_MINUTES = 10;
 const OTP_MAX_ATTEMPTS = 5;
-const ACTIVE_SESSION_MESSAGE = "This account is already logged in on another device. Please logout there first.";
 
 function serializeUser(user) {
   return {
@@ -40,10 +39,6 @@ async function startSession(user) {
   user.activeSessionStartedAt = new Date();
   await user.save();
   return sessionId;
-}
-
-function hasActiveSession(user) {
-  return Boolean(user.activeSessionId);
 }
 
 async function signup(req, res) {
@@ -177,10 +172,6 @@ async function login(req, res) {
     return res.status(401).json({ success: false, message: "Invalid credentials" });
   }
 
-  if (hasActiveSession(user)) {
-    return res.status(409).json({ success: false, message: ACTIVE_SESSION_MESSAGE });
-  }
-
   const sessionId = await startSession(user);
   const token = generateToken(user, sessionId);
   return res.json({
@@ -203,10 +194,6 @@ async function googleLogin(req, res) {
     });
 
     if (user) {
-      if (hasActiveSession(user)) {
-        return res.status(409).json({ success: false, message: ACTIVE_SESSION_MESSAGE });
-      }
-
       let shouldSave = false;
       if (!user.googleId) {
         user.googleId = payload.sub;

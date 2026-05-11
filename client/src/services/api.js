@@ -16,3 +16,18 @@ api.interceptors.request.use((config) => {
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const message = error.response?.data?.message || "";
+    const isSessionReplaced = error.response?.status === 401 && message.toLowerCase().includes("another active session");
+
+    if (isSessionReplaced) {
+      localStorage.removeItem("chat_token");
+      window.dispatchEvent(new CustomEvent("quickchat:session-replaced", { detail: { message } }));
+    }
+
+    return Promise.reject(error);
+  }
+);
