@@ -704,52 +704,6 @@ export default function HomePage() {
 
       <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
 
-      {isCallOpen && isCallMinimized && (
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={() => setIsCallMinimized(false)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" || event.key === " ") {
-              event.preventDefault();
-              setIsCallMinimized(false);
-            }
-          }}
-          className="fixed inset-x-0 top-0 z-[65] flex h-14 items-center justify-between bg-[#111b21] px-4 text-left text-white shadow-2xl sm:left-1/2 sm:top-4 sm:h-14 sm:w-[min(92vw,520px)] sm:-translate-x-1/2 sm:rounded-2xl sm:border sm:border-white/10"
-        >
-          <span className="flex min-w-0 items-center gap-3">
-            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white/10">
-              {callState.muted ? <FiMicOff className="text-lg text-white/85" /> : <FiPhone className="text-lg text-emerald-400" />}
-            </span>
-            <span className="min-w-0">
-              <span className="block truncate text-sm font-semibold text-emerald-400">
-                {callState.peer?.fullName || "QuickChat user"} - {callState.startedAt ? formatCallDuration(callState.startedAt) : getCallStatusText()}
-              </span>
-              <span className="block truncate text-xs text-white/60">Tap to return to call</span>
-            </span>
-          </span>
-          <span
-            role="button"
-            tabIndex={0}
-            onClick={(event) => {
-              event.stopPropagation();
-              endAudioCall();
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                event.stopPropagation();
-                endAudioCall();
-              }
-            }}
-            className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-rose-500 text-white"
-            aria-label="End call"
-          >
-            <FiPhoneOff />
-          </span>
-        </div>
-      )}
-
       {shouldShowFullCallScreen && (
         <div className="fixed inset-0 z-[70] flex min-h-[100dvh] flex-col overflow-hidden bg-[#07110f] text-white">
           <div
@@ -866,7 +820,52 @@ export default function HomePage() {
         />
       )}
 
-      <div className="min-h-0 h-full lg:col-span-8 xl:col-span-6">
+      <div className="flex min-h-0 h-full flex-col lg:col-span-8 xl:col-span-6">
+        {isCallOpen && isCallMinimized && selectedUser?._id === callState.peer?._id && (
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => setIsCallMinimized(false)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                setIsCallMinimized(false);
+              }
+            }}
+            className="mb-2 flex h-14 shrink-0 items-center justify-between rounded-2xl border border-white/10 bg-[#111b21] px-3 text-left text-white shadow-2xl"
+          >
+            <span className="flex min-w-0 items-center gap-3">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white/10">
+                {callState.muted ? <FiMicOff className="text-lg text-white/85" /> : <FiPhone className="text-lg text-emerald-400" />}
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-semibold text-emerald-400">
+                  {callState.peer?.fullName || "QuickChat user"} - {callState.startedAt ? formatCallDuration(callState.startedAt) : getCallStatusText()}
+                </span>
+                <span className="block truncate text-xs text-white/60">Tap to return to call</span>
+              </span>
+            </span>
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(event) => {
+                event.stopPropagation();
+                endAudioCall();
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  endAudioCall();
+                }
+              }}
+              className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-rose-500 text-white"
+              aria-label="End call"
+            >
+              <FiPhoneOff />
+            </span>
+          </div>
+        )}
         <ChatContainer
           user={user}
           selectedUser={selectedUser}
