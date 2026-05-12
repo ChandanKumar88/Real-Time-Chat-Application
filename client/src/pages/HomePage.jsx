@@ -4,16 +4,21 @@ import {
   FiChevronLeft,
   FiChevronRight,
   FiDownload,
+  FiLock,
   FiMenu,
   FiMic,
   FiMicOff,
   FiMinimize2,
   FiMinus,
+  FiMoreHorizontal,
   FiPhone,
   FiPhoneOff,
   FiPlus,
   FiRotateCcw,
   FiShare2,
+  FiUserPlus,
+  FiVideo,
+  FiVolume2,
   FiX,
 } from "react-icons/fi";
 import { useAuth } from "../context/AuthContext";
@@ -24,10 +29,24 @@ import ChatContainer from "../components/ChatContainer";
 import RightSidebar from "../components/RightSidebar";
 import bgImage from "../assets/bgImage.svg";
 
-const CALL_ICE_SERVERS = [
-  { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] },
-];
 const CALL_EVENT_POLL_INTERVAL_MS = 900;
+
+function getCallIceServers() {
+  const iceServers = [{ urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] }];
+  const turnUrls = import.meta.env.VITE_TURN_URLS || import.meta.env.VITE_TURN_URL;
+  const username = import.meta.env.VITE_TURN_USERNAME;
+  const credential = import.meta.env.VITE_TURN_CREDENTIAL;
+
+  if (turnUrls && username && credential) {
+    iceServers.push({
+      urls: turnUrls.split(",").map((url) => url.trim()).filter(Boolean),
+      username,
+      credential,
+    });
+  }
+
+  return iceServers;
+}
 
 export default function HomePage() {
   const { user, logout, setupEncryptionPassphrase } = useAuth();
@@ -69,6 +88,7 @@ export default function HomePage() {
   const [, setCallClockTick] = useState(0);
   const pinchStateRef = useRef(null);
   const remoteAudioRef = useRef(null);
+  const remoteStreamRef = useRef(null);
   const peerConnectionRef = useRef(null);
   const localStreamRef = useRef(null);
   const pendingOfferRef = useRef(null);
@@ -247,6 +267,15 @@ export default function HomePage() {
     return "Audio call";
   }
 
+  function getCallInitials(name) {
+    return (name || "QC")
+      .split(" ")
+      .map((part) => part[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase();
+  }
+
   const isPortraitPreviewVideo = previewMedia?.type === "video" && previewVideoRatio && previewVideoRatio < 1;
 
   async function unlockEncryptedChats(event) {
@@ -298,6 +327,7 @@ export default function HomePage() {
     if (remoteAudioRef.current) {
       remoteAudioRef.current.srcObject = null;
     }
+    remoteStreamRef.current = null;
   }
 
   function resetCall() {
@@ -364,7 +394,10 @@ export default function HomePage() {
       throw new Error("Browser microphone calling support nahi kar raha.");
     }
 
-    const peerConnection = new RTCPeerConnection({ iceServers: CALL_ICE_SERVERS });
+    const peerConnection = new RTCPeerConnection({
+      iceServers: getCallIceServers(),
+      iceCandidatePoolSize: 4,
+    });
     peerConnectionRef.current = peerConnection;
 
     peerConnection.onicecandidate = (event) => {
@@ -380,12 +413,20 @@ export default function HomePage() {
     };
 
     peerConnection.ontrack = (event) => {
-      const [remoteStream] = event.streams;
-      if (!remoteStream || !remoteAudioRef.current) return;
+      const remoteStream = event.streams?.[0] || remoteStreamRef.current || new MediaStream();
+      if (!event.streams?.[0] && event.track && !remoteStream.getTracks().some((track) => track.id === event.track.id)) {
+        remoteStream.addTrack(event.track);
+      }
+      remoteStreamRef.current = remoteStream;
+      if (!remoteAudioRef.current) return;
+      remoteAudioRef.current.autoplay = true;
+      remoteAudioRef.current.playsInline = true;
       remoteAudioRef.current.srcObject = remoteStream;
       remoteAudioRef.current.muted = false;
       remoteAudioRef.current.volume = 1;
-      remoteAudioRef.current.play().catch(() => null);
+      remoteAudioRef.current.play().catch(() => {
+        toast.error("Audio blocked hai. Call screen par tap karke audio allow karo.");
+      });
     };
 
     peerConnection.onconnectionstatechange = () => {
@@ -398,7 +439,18 @@ export default function HomePage() {
 
     const localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
     localStreamRef.current = localStream;
-    localStream.getTracks().forEach((track) => peerConnection.addTrack(track, localStream));
+    const audioTracks = localStream.getAudioTracks();
+    if (audioTracks.length === 0) {
+      throw new Error("Microphone audio track nahi mila. Mic permission check karo.");
+    }
+    audioTracks.forEach((track) => {
+      track.enabled = true;
+      if (peerConnection.addTransceiver) {
+        peerConnection.addTransceiver(track, { direction: "sendrecv", streams: [localStream] });
+      } else {
+        peerConnection.addTrack(track, localStream);
+      }
+    });
     return peerConnection;
   }
 
@@ -705,80 +757,150 @@ export default function HomePage() {
       <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
 
       {shouldShowFullCallScreen && (
-        <div className="fixed inset-0 z-[70] flex min-h-[100dvh] flex-col overflow-hidden bg-[#07110f] text-white">
+        <div className="fixed inset-0 z-[70] flex min-h-[100dvh] flex-col overflow-hidden bg-[#111b21] text-white">
           <div
-            className="absolute inset-0 opacity-70"
+            className="absolute inset-0 opacity-35"
             style={{
               backgroundImage:
-                "radial-gradient(circle at 50% 20%, rgba(16,185,129,0.28), transparent 28%), radial-gradient(circle at 50% 68%, rgba(139,92,246,0.28), transparent 32%), linear-gradient(180deg, #0b1815 0%, #07110f 52%, #020403 100%)",
+                `linear-gradient(rgba(17,27,33,0.88), rgba(17,27,33,0.92)), url(${bgImage})`,
+              backgroundSize: "cover, 430px",
             }}
           />
-          <div className="relative z-10 flex flex-1 flex-col items-center justify-between px-5 py-7 sm:px-8 sm:py-10">
-            <div className="flex w-full max-w-md items-center justify-between">
+          <div className="absolute inset-x-0 top-0 z-10 h-32 bg-gradient-to-b from-black/55 to-transparent" />
+          <div className="relative z-20 flex min-h-[100dvh] flex-col px-5 pb-5 pt-5 sm:px-8 sm:pb-7 sm:pt-7">
+            <div className="flex items-center justify-between">
               <button
                 type="button"
                 onClick={() => setIsCallMinimized(true)}
-                className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur transition hover:bg-white/15"
+                className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-white/10 text-white shadow-xl shadow-black/20 backdrop-blur transition hover:bg-white/15 sm:h-12 sm:w-12"
                 aria-label="Minimize call"
               >
-                <FiMinimize2 />
+                <FiMinimize2 className="text-2xl sm:text-xl" />
               </button>
-              <p className="text-sm font-medium text-white/70">QuickChat audio call</p>
-              <span className="h-11 w-11" />
+              <button
+                type="button"
+                className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-white/10 text-white shadow-xl shadow-black/20 backdrop-blur transition hover:bg-white/15 sm:h-12 sm:w-12"
+                aria-label="Add person"
+                title="Add person"
+              >
+                <FiUserPlus className="text-2xl sm:text-xl" />
+              </button>
             </div>
 
-            <div className="flex w-full max-w-md flex-1 flex-col items-center justify-center text-center">
-              <div className="relative">
-                <span className="absolute inset-[-18px] rounded-full bg-emerald-400/15 blur-xl" />
-                <img
-                  src={callState.peer?.profilePic || "https://placehold.co/160x160?text=U"}
-                  alt={callState.peer?.fullName || "Caller"}
-                  className="relative h-32 w-32 rounded-full border border-white/20 object-cover shadow-2xl shadow-black/40 sm:h-40 sm:w-40"
-                />
-              </div>
-              <h2 className="mt-7 max-w-full truncate text-3xl font-semibold sm:text-4xl">{callState.peer?.fullName || "QuickChat user"}</h2>
-              <p className="mt-3 text-base text-white/70">
-                {getCallStatusText()}
+            <div className="mt-2 text-center sm:mt-0">
+              <h2 className="mx-auto max-w-[78vw] truncate text-2xl font-semibold text-white sm:text-3xl">
+                {callState.peer?.fullName || "QuickChat user"}
+              </h2>
+              <p className="mt-1 inline-flex items-center gap-2 text-sm text-white/60">
+                <FiLock className="text-xs" />
+                End-to-end encrypted
               </p>
             </div>
 
-            <div className="w-full max-w-md rounded-[28px] border border-white/10 bg-white/10 p-4 shadow-2xl backdrop-blur-xl">
+            <div className="flex flex-1 flex-col items-center justify-center text-center">
+              <div className="relative flex h-52 w-52 items-center justify-center sm:h-64 sm:w-64">
+                <span className="quickchat-call-ripple quickchat-call-ripple-1" />
+                <span className="quickchat-call-ripple quickchat-call-ripple-2" />
+                <span className="quickchat-call-ripple quickchat-call-ripple-3" />
+                {callState.peer?.profilePic ? (
+                  <img
+                    src={callState.peer.profilePic}
+                    alt={callState.peer?.fullName || "Caller"}
+                    className="relative z-10 h-36 w-36 rounded-full border border-white/15 object-cover shadow-2xl shadow-black/50 sm:h-44 sm:w-44"
+                  />
+                ) : (
+                  <span className="relative z-10 grid h-36 w-36 place-items-center rounded-full border border-white/15 bg-[#eeedfe] text-4xl font-semibold text-[#3c3489] shadow-2xl shadow-black/50 sm:h-44 sm:w-44 sm:text-5xl">
+                    {getCallInitials(callState.peer?.fullName)}
+                  </span>
+                )}
+              </div>
+              {callState.status === "active" ? (
+                <>
+                  <p className="mt-6 text-2xl font-semibold tabular-nums text-emerald-400 sm:text-3xl">
+                    {formatCallDuration(callState.startedAt)}
+                  </p>
+                  <div className="quickchat-call-wave mt-5" aria-hidden="true">
+                    <span />
+                    <span />
+                    <span />
+                    <span />
+                    <span />
+                    <span />
+                    <span />
+                  </div>
+                </>
+              ) : (
+                <p className="mt-6 text-lg font-medium text-white/65">{getCallStatusText()}</p>
+              )}
+            </div>
+
+            <div className="mx-auto w-full max-w-[680px] rounded-[34px] border border-white/10 bg-black/40 px-4 py-4 shadow-2xl shadow-black/35 backdrop-blur-2xl sm:px-6 sm:py-5">
               {callState.status === "ringing" ? (
-                <div className="grid grid-cols-2 gap-3">
+                <div className="flex items-center justify-center gap-10">
                   <button
                     type="button"
                     onClick={rejectAudioCall}
-                    className="flex min-h-24 flex-col items-center justify-center gap-2 rounded-2xl bg-rose-500 text-sm font-semibold text-white shadow-lg shadow-rose-950/30 transition hover:bg-rose-600"
+                    className="flex flex-col items-center gap-2 text-xs font-semibold text-white/75"
                   >
-                    <FiPhoneOff className="text-2xl" />
+                    <span className="grid h-16 w-16 place-items-center rounded-full bg-rose-500 text-white shadow-lg shadow-rose-950/30 transition hover:bg-rose-600">
+                      <FiPhoneOff className="text-2xl" />
+                    </span>
                     Decline
                   </button>
                   <button
                     type="button"
                     onClick={acceptAudioCall}
-                    className="flex min-h-24 flex-col items-center justify-center gap-2 rounded-2xl bg-emerald-500 text-sm font-semibold text-white shadow-lg shadow-emerald-950/30 transition hover:bg-emerald-600"
+                    className="flex flex-col items-center gap-2 text-xs font-semibold text-white/75"
                   >
-                    <FiPhone className="text-2xl" />
+                    <span className="grid h-16 w-16 place-items-center rounded-full bg-emerald-500 text-white shadow-lg shadow-emerald-950/30 transition hover:bg-emerald-600">
+                      <FiPhone className="text-2xl" />
+                    </span>
                     Accept
                   </button>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-5 items-center gap-2">
+                  <button type="button" className="flex flex-col items-center gap-2 text-[11px] font-medium text-white/70">
+                    <span className="grid h-12 w-12 place-items-center rounded-full bg-white/10 text-white transition hover:bg-white/15 sm:h-14 sm:w-14">
+                      <FiMoreHorizontal className="text-xl" />
+                    </span>
+                    More
+                  </button>
+                  <button type="button" className="flex flex-col items-center gap-2 text-[11px] font-medium text-white/70">
+                    <span className="grid h-12 w-12 place-items-center rounded-full bg-white/10 text-white/75 transition hover:bg-white/15 sm:h-14 sm:w-14">
+                      <FiVideo className="text-xl" />
+                    </span>
+                    Video
+                  </button>
+                  <button type="button" className="flex flex-col items-center gap-2 text-[11px] font-medium text-white/70">
+                    <span className="grid h-12 w-12 place-items-center rounded-full bg-white/10 text-white transition hover:bg-white/15 sm:h-14 sm:w-14">
+                      <FiVolume2 className="text-xl" />
+                    </span>
+                    Speaker
+                  </button>
                   <button
                     type="button"
                     onClick={toggleCallMute}
                     disabled={callState.status !== "active"}
-                    className="flex min-h-24 flex-col items-center justify-center gap-2 rounded-2xl bg-white/10 text-sm font-semibold text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-45"
+                    className="flex flex-col items-center gap-2 text-[11px] font-medium text-white/70 disabled:cursor-not-allowed disabled:opacity-45"
                   >
-                    {callState.muted ? <FiMicOff className="text-2xl" /> : <FiMic className="text-2xl" />}
+                    <span
+                      className={`grid h-12 w-12 place-items-center rounded-full transition sm:h-14 sm:w-14 ${
+                        callState.muted ? "bg-white text-[#111b21]" : "bg-white/10 text-white hover:bg-white/15"
+                      }`}
+                    >
+                      {callState.muted ? <FiMicOff className="text-xl" /> : <FiMic className="text-xl" />}
+                    </span>
                     {callState.muted ? "Unmute" : "Mute"}
                   </button>
                   <button
                     type="button"
                     onClick={endAudioCall}
-                    className="flex min-h-24 flex-col items-center justify-center gap-2 rounded-2xl bg-rose-500 text-sm font-semibold text-white shadow-lg shadow-rose-950/30 transition hover:bg-rose-600"
+                    className="flex flex-col items-center gap-2 text-[11px] font-medium text-rose-200"
                   >
-                    <FiPhoneOff className="text-2xl" />
+                    <span className="grid h-14 w-14 place-items-center rounded-full bg-rose-500 text-white shadow-lg shadow-rose-950/30 transition hover:bg-rose-600 sm:h-16 sm:w-16">
+                      <FiPhoneOff className="text-2xl" />
+                    </span>
                     End
                   </button>
                 </div>
@@ -821,7 +943,7 @@ export default function HomePage() {
       )}
 
       <div className="flex min-h-0 h-full flex-col lg:col-span-8 xl:col-span-6">
-        {isCallOpen && isCallMinimized && selectedUser?._id === callState.peer?._id && (
+        {isCallOpen && isCallMinimized && (
           <div
             role="button"
             tabIndex={0}
@@ -832,17 +954,20 @@ export default function HomePage() {
                 setIsCallMinimized(false);
               }
             }}
-            className="mb-2 flex h-14 shrink-0 items-center justify-between rounded-2xl border border-white/10 bg-[#111b21] px-3 text-left text-white shadow-2xl"
+            className="mb-2 flex h-16 shrink-0 items-center justify-between rounded-2xl border border-emerald-400/10 bg-[#0b1115] px-3 text-left text-white shadow-2xl"
           >
             <span className="flex min-w-0 items-center gap-3">
-              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white/10">
-                {callState.muted ? <FiMicOff className="text-lg text-white/85" /> : <FiPhone className="text-lg text-emerald-400" />}
+              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white/10">
+                {callState.muted ? <FiMicOff className="text-xl text-white/85" /> : <FiPhone className="text-xl text-emerald-400" />}
               </span>
               <span className="min-w-0">
-                <span className="block truncate text-sm font-semibold text-emerald-400">
-                  {callState.peer?.fullName || "QuickChat user"} - {callState.startedAt ? formatCallDuration(callState.startedAt) : getCallStatusText()}
+                <span className="block truncate text-base font-semibold text-emerald-400">
+                  {callState.peer?.fullName || "QuickChat user"}
+                  {callState.status === "active" ? ` - ${formatCallDuration(callState.startedAt)}` : ""}
                 </span>
-                <span className="block truncate text-xs text-white/60">Tap to return to call</span>
+                <span className="block truncate text-sm text-white/60">
+                  {callState.status === "active" ? "Tap to return to call" : getCallStatusText()}
+                </span>
               </span>
             </span>
             <span
@@ -859,7 +984,7 @@ export default function HomePage() {
                   endAudioCall();
                 }
               }}
-              className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-rose-500 text-white"
+              className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-rose-500 text-white shadow-lg shadow-rose-950/30"
               aria-label="End call"
             >
               <FiPhoneOff />
