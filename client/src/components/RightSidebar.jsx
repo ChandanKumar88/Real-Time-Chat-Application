@@ -14,9 +14,9 @@ export default function RightSidebar({
   const isDark = theme === "dark";
   return (
     <aside
-      className={`rounded-3xl p-4 shadow-xl backdrop-blur ${
+      className={`h-full overflow-hidden rounded-3xl p-4 shadow-xl backdrop-blur ${
         mobile
-          ? `fixed inset-x-3 bottom-3 z-40 max-h-[72vh] overflow-hidden ${
+          ? `fixed inset-x-3 bottom-3 z-40 max-h-[72vh] overflow-hidden lg:hidden ${
               isDark ? "border border-white/20 bg-[#11131a]/96" : "border border-slate-300 bg-white/95"
             }`
           : `hidden lg:block ${isDark ? "border border-white/20 bg-black/35" : "border border-slate-300 bg-white/70"}`
@@ -28,7 +28,7 @@ export default function RightSidebar({
         <>
           <div className="mb-4 flex items-center justify-between">
             <p className={`text-sm font-semibold ${isDark ? "text-slate-100" : "text-slate-900"}`}>Shared media</p>
-            {mobile && (
+            {(mobile || onCloseMobile) && (
               <button
                 type="button"
                 onClick={onCloseMobile}
@@ -51,7 +51,7 @@ export default function RightSidebar({
           <p className={`mt-1 text-center text-sm ${isDark ? "text-slate-400" : "text-slate-500"}`}>{selectedUser.bio || "No bio available."}</p>
 
           <h4 className={`mt-6 mb-2 text-sm font-semibold uppercase tracking-wide ${isDark ? "text-slate-300" : "text-slate-600"}`}>Media</h4>
-          <div className="chat-scroll grid max-h-[45vh] grid-cols-2 gap-2 overflow-y-auto pr-1">
+          <div className="chat-scroll grid max-h-[38vh] grid-cols-2 gap-2 overflow-y-auto pr-1">
             {messages
               .filter((m) => m.image || m.video)
               .map((m) =>
@@ -104,6 +104,10 @@ export default function RightSidebar({
                 Is chat me abhi koi shared media nahi hai.
               </p>
             )}
+          </div>
+          <h4 className={`mt-5 mb-2 text-sm font-semibold uppercase tracking-wide ${isDark ? "text-slate-300" : "text-slate-600"}`}>Files</h4>
+          <div className={`rounded-2xl px-3 py-5 text-center text-sm ${isDark ? "bg-white/5 text-slate-400" : "bg-slate-100 text-slate-500"}`}>
+            Is chat me abhi koi shared files nahi hain.
           </div>
         </>
       )}

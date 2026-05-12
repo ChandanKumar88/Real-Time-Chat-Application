@@ -15,6 +15,7 @@ import {
   FiPhoneOff,
   FiPlus,
   FiRotateCcw,
+  FiSearch,
   FiShare2,
   FiUserPlus,
   FiVideo,
@@ -72,6 +73,10 @@ export default function HomePage() {
   const [theme, setTheme] = useState(() => localStorage.getItem("chat_theme") || "light");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isMediaOpen, setIsMediaOpen] = useState(false);
+  const [isSharedMediaOpen, setIsSharedMediaOpen] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [messageSearch, setMessageSearch] = useState("");
+  const [activeSearchIndex, setActiveSearchIndex] = useState(0);
   const [previewMedia, setPreviewMedia] = useState(null);
   const [previewZoom, setPreviewZoom] = useState(1);
   const [previewVideoRatio, setPreviewVideoRatio] = useState(null);
@@ -85,6 +90,7 @@ export default function HomePage() {
     startedAt: null,
   });
   const [isCallMinimized, setIsCallMinimized] = useState(false);
+  const [callHistory, setCallHistory] = useState([]);
   const [, setCallClockTick] = useState(0);
   const pinchStateRef = useRef(null);
   const remoteAudioRef = useRef(null);
@@ -164,6 +170,37 @@ export default function HomePage() {
         })),
     [messages]
   );
+  const messageSearchResults = useMemo(() => {
+    const keyword = messageSearch.trim().toLowerCase();
+    if (!keyword) return [];
+
+    return messages
+      .filter((message) => message.text && message.text.toLowerCase().includes(keyword))
+      .map((message) => ({
+        _id: message._id,
+        text: message.text,
+        senderId: message.senderId,
+        createdAt: message.createdAt,
+      }));
+  }, [messages, messageSearch]);
+  const activeSearchMessageId = messageSearchResults[activeSearchIndex]?._id || "";
+
+  useEffect(() => {
+    setIsSearchOpen(false);
+    setIsSharedMediaOpen(false);
+    setMessageSearch("");
+    setActiveSearchIndex(0);
+  }, [selectedUser?._id]);
+
+  useEffect(() => {
+    setActiveSearchIndex(0);
+  }, [messageSearch]);
+
+  useEffect(() => {
+    if (activeSearchIndex >= messageSearchResults.length) {
+      setActiveSearchIndex(Math.max(0, messageSearchResults.length - 1));
+    }
+  }, [activeSearchIndex, messageSearchResults.length]);
 
   function clampZoom(value) {
     return Math.min(4, Math.max(1, Number(value.toFixed(2))));
@@ -274,6 +311,37 @@ export default function HomePage() {
       .join("")
       .slice(0, 2)
       .toUpperCase();
+  }
+
+  function formatPanelTime(value) {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+
+  function rememberCall(peer, status, type = "audio") {
+    if (!peer?._id) return;
+    const labels = {
+      missed: "Missed",
+      received: "Received",
+      outgoing: "Outgoing",
+    };
+    const entry = {
+      id: `${Date.now()}-${peer._id}-${status}`,
+      userId: peer._id,
+      name: peer.fullName || "QuickChat user",
+      profilePic: peer.profilePic || "",
+      type,
+      status,
+      statusLabel: labels[status] || "Call",
+      time: formatPanelTime(Date.now()),
+    };
+    setCallHistory((prev) => [entry, ...prev].slice(0, 30));
+  }
+
+  function handleStartVideoCall() {
+    toast("Video call UI ready hai, video calling logic abhi add nahi hua.");
   }
 
   const isPortraitPreviewVideo = previewMedia?.type === "video" && previewVideoRatio && previewVideoRatio < 1;
@@ -471,6 +539,7 @@ export default function HomePage() {
       queuedIceCandidatesRef.current = [];
       setIsCallMinimized(false);
       setCallState({ status: "calling", direction: "outgoing", peer: selectedUser, muted: false, startedAt: null });
+      rememberCall(selectedUser, "outgoing");
 
       const peerConnection = await createPeerConnection(selectedUser._id);
       const offer = await peerConnection.createOffer();
@@ -501,6 +570,7 @@ export default function HomePage() {
       await flushLocalIceCandidates(peerId);
 
       setCallState((prev) => ({ ...prev, status: "active", startedAt: prev.startedAt || Date.now() }));
+      rememberCall(callStateRef.current.peer, "received");
       pendingOfferRef.current = null;
     } catch (error) {
       sendCallSignal("reject", peerId, { reason: "failed" }).catch(() => null);
@@ -511,6 +581,9 @@ export default function HomePage() {
 
   function rejectAudioCall() {
     const peerId = callPeerIdRef.current;
+    if (callStateRef.current.direction === "incoming") {
+      rememberCall(callStateRef.current.peer, "missed");
+    }
     if (peerId) sendCallSignal("reject", peerId, { reason: "rejected" }).catch(() => null);
     resetCall();
   }
@@ -742,7 +815,7 @@ export default function HomePage() {
         <button
           aria-label="Close media backdrop"
           onClick={() => setIsMediaOpen(false)}
-          className="fixed inset-0 z-30 bg-slate-900/55 xl:hidden"
+          className="fixed inset-0 z-30 bg-slate-900/55 lg:hidden"
         />
       )}
 
@@ -921,6 +994,7 @@ export default function HomePage() {
           onLogout={logout}
           theme={theme}
           toggleTheme={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
+          callHistory={callHistory}
         />
       </div>
 
@@ -937,12 +1011,13 @@ export default function HomePage() {
           onLogout={logout}
           theme={theme}
           toggleTheme={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
+          callHistory={callHistory}
           isMobileOpen
           onCloseMobile={() => setIsSidebarOpen(false)}
         />
       )}
 
-      <div className="flex min-h-0 h-full flex-col lg:col-span-8 xl:col-span-6">
+      <div className={`flex min-h-0 h-full flex-col lg:col-span-8 ${isSearchOpen || isSharedMediaOpen ? "xl:col-span-6" : "xl:col-span-9"}`}>
         {isCallOpen && isCallMinimized && (
           <div
             role="button"
@@ -1013,8 +1088,19 @@ export default function HomePage() {
           isTyping={isSelectedUserTyping}
           theme={theme}
           onOpenMedia={() => setIsMediaOpen(true)}
+          onOpenSharedMedia={() => {
+            setIsSearchOpen(false);
+            setIsSharedMediaOpen(true);
+          }}
           onStartAudioCall={startAudioCall}
+          onStartVideoCall={handleStartVideoCall}
           isCallDisabled={callState.status !== "idle" || !selectedUser?.isOnline}
+          onOpenSearchPanel={() => {
+            setIsSharedMediaOpen(false);
+            setIsSearchOpen(true);
+          }}
+          searchKeyword={messageSearch}
+          activeSearchMessageId={activeSearchMessageId}
           onPreviewMedia={openPreview}
           onReplyMessage={setReplyToMessage}
           onCancelReply={() => setReplyToMessage(null)}
@@ -1049,8 +1135,83 @@ export default function HomePage() {
         />
       </div>
 
-      <div className="hidden xl:col-span-3 xl:block xl:h-full">
-        {selectedUser ? (
+      {isSearchOpen && selectedUser ? (
+        <aside
+          className={`hidden h-full overflow-hidden rounded-3xl p-4 shadow-2xl backdrop-blur transition lg:fixed lg:bottom-3 lg:right-3 lg:top-3 lg:z-40 lg:block lg:w-[360px] lg:max-w-[calc(100vw-420px)] xl:static xl:col-span-3 xl:w-auto xl:max-w-none ${
+            theme === "dark" ? "border border-white/20 bg-[#11131a]/96" : "border border-slate-300 bg-white/95"
+          }`}
+        >
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h3 className={`text-base font-semibold ${theme === "dark" ? "text-slate-100" : "text-slate-900"}`}>Search messages</h3>
+              <p className={`text-xs ${theme === "dark" ? "text-slate-400" : "text-slate-500"}`}>Only in current chat</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsSearchOpen(false)}
+              className={`rounded-full p-2 ${theme === "dark" ? "text-slate-300 hover:bg-white/10" : "text-slate-600 hover:bg-slate-100"}`}
+              aria-label="Close search"
+            >
+              <FiX />
+            </button>
+          </div>
+          <div className="relative mb-4">
+            <FiSearch className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 ${theme === "dark" ? "text-slate-400" : "text-slate-500"}`} />
+            <input
+              value={messageSearch}
+              onChange={(event) => setMessageSearch(event.target.value)}
+              placeholder="Search in this chat..."
+              className={`w-full rounded-full py-2.5 pl-10 pr-4 text-sm outline-none transition focus:border-violet-400 ${
+                theme === "dark"
+                  ? "border border-white/10 bg-[#2a2553]/75 text-slate-200 placeholder:text-slate-400"
+                  : "border border-slate-300 bg-white/90 text-slate-800 placeholder:text-slate-500"
+              }`}
+            />
+          </div>
+          <div className={`mb-3 flex items-center justify-between text-xs ${theme === "dark" ? "text-slate-400" : "text-slate-500"}`}>
+            <span>{messageSearch.trim() ? `${messageSearchResults.length} result${messageSearchResults.length === 1 ? "" : "s"}` : "Type a keyword"}</span>
+            {messageSearchResults.length > 0 && (
+              <span>
+                {activeSearchIndex + 1}/{messageSearchResults.length}
+              </span>
+            )}
+          </div>
+          <div className="chat-scroll max-h-[calc(100%-132px)] space-y-2 overflow-y-auto pr-1">
+            {messageSearchResults.map((result, index) => {
+              const isActive = index === activeSearchIndex;
+              return (
+                <button
+                  key={result._id}
+                  type="button"
+                  onClick={() => setActiveSearchIndex(index)}
+                  className={`w-full rounded-xl border px-3 py-2 text-left transition ${
+                    isActive
+                      ? theme === "dark"
+                        ? "border-amber-300/60 bg-amber-300/10"
+                        : "border-amber-300 bg-amber-50"
+                      : theme === "dark"
+                        ? "border-white/10 bg-white/5 hover:bg-white/10"
+                        : "border-slate-200 bg-white/80 hover:bg-slate-100"
+                  }`}
+                >
+                  <p className={`mb-1 text-[11px] ${result.senderId === user?._id ? "text-violet-300" : theme === "dark" ? "text-slate-400" : "text-slate-500"}`}>
+                    {result.senderId === user?._id ? "You" : selectedUser.fullName} - {formatPanelTime(result.createdAt)}
+                  </p>
+                  <p className={`line-clamp-2 text-sm ${theme === "dark" ? "text-slate-100" : "text-slate-800"}`}>{result.text}</p>
+                </button>
+              );
+            })}
+            {messageSearch.trim() && messageSearchResults.length === 0 && (
+              <p className={`rounded-2xl px-3 py-8 text-center text-sm ${theme === "dark" ? "bg-white/5 text-slate-400" : "bg-slate-100 text-slate-500"}`}>
+                No matching message found.
+              </p>
+            )}
+          </div>
+        </aside>
+      ) : null}
+
+      {isSharedMediaOpen && selectedUser ? (
+        <div className="hidden h-full transition lg:fixed lg:bottom-3 lg:right-3 lg:top-3 lg:z-40 lg:block lg:w-[360px] lg:max-w-[calc(100vw-420px)] xl:static xl:col-span-3 xl:w-auto xl:max-w-none">
           <RightSidebar
             selectedUser={selectedUser}
             messages={messages}
@@ -1066,9 +1227,10 @@ export default function HomePage() {
               }
             }}
             theme={theme}
+            onCloseMobile={() => setIsSharedMediaOpen(false)}
           />
-        ) : null}
-      </div>
+        </div>
+      ) : null}
 
       {isMediaOpen && selectedUser ? (
         <RightSidebar

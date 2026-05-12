@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { FiChevronDown, FiCornerUpLeft, FiGrid, FiImage, FiLock, FiPhone, FiSend, FiTrash2, FiX } from "react-icons/fi";
+import { FiChevronDown, FiCornerUpLeft, FiGrid, FiImage, FiLock, FiPhone, FiSearch, FiSend, FiTrash2, FiVideo, FiX } from "react-icons/fi";
 import logoIcon from "../assets/logo_icon.svg";
 import ProfileAvatar from "./ProfileAvatar";
 import { processImageFile } from "../utils/image";
@@ -26,19 +26,27 @@ export default function ChatContainer({
   onReplyMessage,
   onCancelReply,
   onStartAudioCall,
+  onStartVideoCall,
   isCallDisabled = false,
   onOpenMedia,
+  onOpenSharedMedia,
+  onOpenSearchPanel,
+  searchKeyword = "",
+  activeSearchMessageId = "",
   onPreviewMedia,
   theme = "dark",
 }) {
   const imageInputRef = useRef(null);
   const textInputRef = useRef(null);
   const messagesContainerRef = useRef(null);
+  const messageRefs = useRef(new Map());
+  const callMenuRef = useRef(null);
   const longPressTimerRef = useRef(null);
   const longPressStateRef = useRef(null);
   const ignoreNextDocumentClickRef = useRef(false);
   const [mediaError, setMediaError] = useState("");
   const [openMenuId, setOpenMenuId] = useState("");
+  const [isCallMenuOpen, setIsCallMenuOpen] = useState(false);
   const [swipeState, setSwipeState] = useState(null);
   const isDark = theme === "dark";
 
@@ -81,6 +89,32 @@ export default function ChatContainer({
     []
   );
 
+  useEffect(() => {
+    if (!isCallMenuOpen) return;
+
+    function closeCallMenu(event) {
+      if (callMenuRef.current?.contains(event.target)) return;
+      setIsCallMenuOpen(false);
+    }
+
+    function handleKeyDown(event) {
+      if (event.key === "Escape") setIsCallMenuOpen(false);
+    }
+
+    document.addEventListener("click", closeCallMenu);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("click", closeCallMenu);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isCallMenuOpen]);
+
+  useEffect(() => {
+    if (!activeSearchMessageId) return;
+    const node = messageRefs.current.get(activeSearchMessageId);
+    node?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [activeSearchMessageId]);
+
   function formatMessageTime(value) {
     if (!value) return "";
     const date = new Date(value);
@@ -110,6 +144,31 @@ export default function ChatContainer({
     const replyId = getMessageId(message?.replyTo);
     if (!replyId) return null;
     return messages.find((item) => item._id === replyId) || null;
+  }
+
+  function getHighlightedText(value) {
+    const keyword = searchKeyword.trim();
+    if (!keyword || !value) return value;
+
+    const lowerValue = value.toLowerCase();
+    const lowerKeyword = keyword.toLowerCase();
+    const parts = [];
+    let cursor = 0;
+    let matchIndex = lowerValue.indexOf(lowerKeyword);
+
+    while (matchIndex !== -1) {
+      if (matchIndex > cursor) parts.push(value.slice(cursor, matchIndex));
+      parts.push(
+        <mark key={`${matchIndex}-${keyword}`} className={`rounded px-0.5 ${isDark ? "bg-amber-300/80 text-slate-950" : "bg-amber-200 text-slate-950"}`}>
+          {value.slice(matchIndex, matchIndex + keyword.length)}
+        </mark>
+      );
+      cursor = matchIndex + keyword.length;
+      matchIndex = lowerValue.indexOf(lowerKeyword, cursor);
+    }
+
+    if (cursor < value.length) parts.push(value.slice(cursor));
+    return parts;
   }
 
   function selectReply(message) {
@@ -222,12 +281,19 @@ export default function ChatContainer({
             </p>
           </div>
         </div>
+        <button
+          type="button"
+          onClick={onOpenSharedMedia}
+          className="hidden min-w-0 flex-1 self-stretch lg:block"
+          aria-label="Open shared media"
+          title="Open shared media"
+        />
         <div className="flex shrink-0 items-center gap-1.5">
           <button
             type="button"
             onClick={onStartAudioCall}
             disabled={isCallDisabled}
-            className={`inline-flex h-8 w-8 items-center justify-center rounded-lg transition sm:h-9 sm:w-9 ${
+            className={`inline-flex h-8 w-8 items-center justify-center rounded-lg transition sm:h-9 sm:w-9 lg:hidden ${
               isDark
                 ? "border border-white/10 bg-white/5 text-emerald-300 hover:bg-white/10 disabled:text-slate-600"
                 : "border border-slate-200 bg-white text-emerald-600 hover:bg-slate-100 disabled:text-slate-300"
@@ -239,11 +305,80 @@ export default function ChatContainer({
           <button
             type="button"
             onClick={onOpenMedia}
-            className={`inline-flex h-8 w-8 items-center justify-center rounded-lg xl:hidden sm:h-9 sm:w-9 ${isDark ? "border border-white/10 bg-white/5 text-slate-300" : "border border-slate-200 bg-white text-slate-700"}`}
+            className={`inline-flex h-8 w-8 items-center justify-center rounded-lg lg:hidden sm:h-9 sm:w-9 ${isDark ? "border border-white/10 bg-white/5 text-slate-300" : "border border-slate-200 bg-white text-slate-700"}`}
             title="Open media"
           >
             <FiGrid />
           </button>
+          <div className="relative hidden items-center gap-1.5 lg:flex" ref={callMenuRef}>
+            <button
+              type="button"
+              onClick={onStartVideoCall}
+              className={`inline-flex h-9 w-9 items-center justify-center rounded-lg transition ${
+                isDark ? "border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
+              }`}
+              title="Video call"
+            >
+              <FiVideo />
+            </button>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                setIsCallMenuOpen((prev) => !prev);
+              }}
+              className={`inline-flex h-9 w-8 items-center justify-center rounded-lg transition ${
+                isDark ? "border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
+              }`}
+              title="Call options"
+              aria-label="Call options"
+            >
+              <FiChevronDown className={`transition ${isCallMenuOpen ? "rotate-180" : ""}`} />
+            </button>
+            {isCallMenuOpen && (
+              <div
+                className={`absolute right-0 top-11 z-40 w-44 origin-top-right rounded-xl border p-1 shadow-2xl transition ${
+                  isDark ? "border-white/10 bg-[#15151c] text-slate-100" : "border-slate-200 bg-white text-slate-800"
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCallMenuOpen(false);
+                    onStartVideoCall?.();
+                  }}
+                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium ${isDark ? "hover:bg-white/10" : "hover:bg-slate-100"}`}
+                >
+                  <FiVideo />
+                  Video Call
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCallMenuOpen(false);
+                    onStartAudioCall?.();
+                  }}
+                  disabled={isCallDisabled}
+                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium disabled:cursor-not-allowed disabled:opacity-45 ${
+                    isDark ? "hover:bg-white/10" : "hover:bg-slate-100"
+                  }`}
+                >
+                  <FiPhone />
+                  Audio Call
+                </button>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={onOpenSearchPanel}
+              className={`inline-flex h-9 w-9 items-center justify-center rounded-lg transition ${
+                isDark ? "border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
+              }`}
+              title="Search messages"
+            >
+              <FiSearch />
+            </button>
+          </div>
         </div>
       </header>
 
@@ -257,9 +392,15 @@ export default function ChatContainer({
           const avatarSrc = isMine ? user?.profilePic || "https://placehold.co/28x28?text=U" : selectedUser?.profilePic || "https://placehold.co/28x28?text=U";
           const repliedMessage = getReplyMessage(m);
           const swipeOffset = swipeState?.id === m._id ? swipeState.offset : 0;
+          const matchesSearch = Boolean(searchKeyword.trim() && m.text?.toLowerCase().includes(searchKeyword.trim().toLowerCase()));
+          const isActiveSearchMatch = activeSearchMessageId === m._id;
           return (
             <div
               key={m._id}
+              ref={(node) => {
+                if (node) messageRefs.current.set(m._id, node);
+                else messageRefs.current.delete(m._id);
+              }}
               className={`relative flex ${isMine ? "justify-end" : "justify-start"}`}
               onTouchStart={(event) => handleTouchStart(event, m)}
               onTouchMove={(event) => handleTouchMove(event, m)}
@@ -279,7 +420,11 @@ export default function ChatContainer({
                 className={`flex max-w-[92%] flex-col transition-transform sm:max-w-[82%] ${isMine ? "items-end" : "items-start"}`}
                 style={{ transform: swipeOffset ? `translateX(${swipeOffset}px)` : undefined }}
               >
-                <div className={`group relative max-w-full rounded-2xl px-2.5 py-2 sm:px-3 ${isMine ? "bg-violet-600 text-white" : isDark ? "bg-white/10 text-slate-100" : "bg-slate-100 text-slate-800"}`}>
+                <div
+                  className={`group relative max-w-full rounded-2xl px-2.5 py-2 transition sm:px-3 ${
+                    isMine ? "bg-violet-600 text-white" : isDark ? "bg-white/10 text-slate-100" : "bg-slate-100 text-slate-800"
+                  } ${matchesSearch ? (isActiveSearchMatch ? "ring-2 ring-amber-300/90" : "ring-1 ring-amber-300/45") : ""}`}
+                >
                   <button
                     type="button"
                     title="Message options"
@@ -346,7 +491,7 @@ export default function ChatContainer({
                       <span className="break-words">Message can't be opened on this device.</span>
                     </div>
                   )}
-                  {!!m.text && <p className="break-words text-sm">{m.text}</p>}
+                  {!!m.text && <p className="break-words text-sm">{getHighlightedText(m.text)}</p>}
                   {!!m.image && (
                     <div
                       role="button"
