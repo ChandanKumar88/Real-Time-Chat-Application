@@ -91,6 +91,7 @@ export default function HomePage() {
   });
   const [isCallMinimized, setIsCallMinimized] = useState(false);
   const [callHistory, setCallHistory] = useState([]);
+  const [isCallHistoryLoaded, setIsCallHistoryLoaded] = useState(false);
   const [, setCallClockTick] = useState(0);
   const pinchStateRef = useRef(null);
   const remoteAudioRef = useRef(null);
@@ -106,6 +107,7 @@ export default function HomePage() {
   const lastCallEventAtRef = useRef(new Date(Date.now() - 60_000).toISOString());
   const processedCallEventsRef = useRef(new Set());
   const pendingLocalIceCandidatesRef = useRef([]);
+  const activeCallHistoryIdRef = useRef("");
 
   useEffect(() => {
     if (user?.encryptionPassphraseRequired) return;
@@ -125,6 +127,25 @@ export default function HomePage() {
   useEffect(() => {
     usersRef.current = users;
   }, [users]);
+
+  useEffect(() => {
+    if (!user?._id) return;
+
+    setIsCallHistoryLoaded(false);
+    try {
+      const savedHistory = localStorage.getItem(`quickchat_call_history_${user._id}`);
+      setCallHistory(savedHistory ? JSON.parse(savedHistory) : []);
+    } catch {
+      setCallHistory([]);
+    } finally {
+      setIsCallHistoryLoaded(true);
+    }
+  }, [user?._id]);
+
+  useEffect(() => {
+    if (!user?._id || !isCallHistoryLoaded) return;
+    localStorage.setItem(`quickchat_call_history_${user._id}`, JSON.stringify(callHistory.slice(0, 30)));
+  }, [callHistory, isCallHistoryLoaded, user?._id]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
@@ -327,8 +348,9 @@ export default function HomePage() {
       received: "Received",
       outgoing: "Outgoing",
     };
+    const historyId = callIdRef.current || `${Date.now()}-${peer._id}-${status}`;
     const entry = {
-      id: `${Date.now()}-${peer._id}-${status}`,
+      id: historyId,
       userId: peer._id,
       name: peer.fullName || "QuickChat user",
       profilePic: peer.profilePic || "",
@@ -337,7 +359,29 @@ export default function HomePage() {
       statusLabel: labels[status] || "Call",
       time: formatPanelTime(Date.now()),
     };
-    setCallHistory((prev) => [entry, ...prev].slice(0, 30));
+    activeCallHistoryIdRef.current = historyId;
+    setCallHistory((prev) => [entry, ...prev.filter((item) => item.id !== historyId)].slice(0, 30));
+  }
+
+  function completeCurrentCallHistory(fallbackStatus = "outgoing") {
+    const peer = callStateRef.current.peer;
+    if (!peer?._id) return;
+
+    if (!activeCallHistoryIdRef.current) {
+      rememberCall(peer, fallbackStatus);
+      return;
+    }
+
+    setCallHistory((prev) =>
+      prev.map((item) =>
+        item.id === activeCallHistoryIdRef.current
+          ? {
+              ...item,
+              time: item.time || formatPanelTime(Date.now()),
+            }
+          : item
+      )
+    );
   }
 
   function handleStartVideoCall() {
@@ -406,6 +450,7 @@ export default function HomePage() {
     callIdRef.current = "";
     queuedIceCandidatesRef.current = [];
     pendingLocalIceCandidatesRef.current = [];
+    activeCallHistoryIdRef.current = "";
     stopCallMedia();
     setIsCallMinimized(false);
     setCallState({ status: "idle", direction: "", peer: null, muted: false, startedAt: null });
@@ -641,6 +686,7 @@ export default function HomePage() {
   }
 
   function endAudioCall() {
+    completeCurrentCallHistory(callStateRef.current.direction === "incoming" ? "received" : "outgoing");
     notifyCallEnd();
     resetCall();
   }
@@ -711,12 +757,18 @@ export default function HomePage() {
 
     if (event.type === "reject") {
       const message = payload.reason === "busy" ? "User dusri call mein busy hai." : "Audio call reject ho gayi.";
+      completeCurrentCallHistory("outgoing");
       resetCall();
       toast.error(message);
       return;
     }
 
     if (event.type === "end" && callStateRef.current.status !== "idle") {
+      if (callStateRef.current.status === "ringing" && callStateRef.current.direction === "incoming") {
+        rememberCall(callStateRef.current.peer, "missed");
+      } else {
+        completeCurrentCallHistory(callStateRef.current.direction === "incoming" ? "received" : "outgoing");
+      }
       resetCall();
       toast("Audio call ended");
     }
