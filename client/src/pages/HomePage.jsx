@@ -457,6 +457,77 @@ export default function HomePage() {
     );
   }
 
+  function attachRemoteAudioStream(remoteStream) {
+    if (!remoteStream || !remoteAudioRef.current) return;
+
+    remoteStreamRef.current = remoteStream;
+    remoteAudioRef.current.autoplay = true;
+    remoteAudioRef.current.playsInline = true;
+    remoteAudioRef.current.srcObject = remoteStream;
+    remoteAudioRef.current.muted = false;
+    remoteAudioRef.current.volume = 1;
+    remoteAudioRef.current.play().catch(() => {
+      toast.error("Audio blocked hai. Call screen par ek baar tap karke audio allow karo.");
+    });
+  }
+
+  async function addLocalAudioTracks(peerConnection) {
+    if (localStreamRef.current) {
+      localStreamRef.current.getAudioTracks().forEach((track) => {
+        track.enabled = !callStateRef.current.muted;
+        if (!peerConnection.getSenders().some((sender) => sender.track?.id === track.id)) {
+          peerConnection.addTrack(track, localStreamRef.current);
+        }
+      });
+      return;
+    }
+
+    const localStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+      video: false,
+    });
+    localStreamRef.current = localStream;
+
+    const audioTracks = localStream.getAudioTracks();
+    if (audioTracks.length === 0) {
+      throw new Error("Microphone audio track nahi mila. Mic permission check karo.");
+    }
+
+    audioTracks.forEach((track) => {
+      track.enabled = !callStateRef.current.muted;
+      peerConnection.addTrack(track, localStream);
+    });
+  }
+
+  function waitForIceGatheringComplete(peerConnection) {
+    if (peerConnection.iceGatheringState === "complete") return Promise.resolve();
+
+    return new Promise((resolve) => {
+      let resolved = false;
+
+      function finish() {
+        if (resolved) return;
+        resolved = true;
+        window.clearTimeout(timeoutId);
+        peerConnection.removeEventListener("icegatheringstatechange", handleIceGatheringChange);
+        resolve();
+      }
+
+      const timeoutId = window.setTimeout(finish, 3000);
+
+      function handleIceGatheringChange() {
+        if (peerConnection.iceGatheringState !== "complete") return;
+        finish();
+      }
+
+      peerConnection.addEventListener("icegatheringstatechange", handleIceGatheringChange);
+    });
+  }
+
   async function createPeerConnection(peerId) {
     if (!navigator.mediaDevices?.getUserMedia) {
       throw new Error("Browser microphone calling support nahi kar raha.");
@@ -485,40 +556,17 @@ export default function HomePage() {
       if (!event.streams?.[0] && event.track && !remoteStream.getTracks().some((track) => track.id === event.track.id)) {
         remoteStream.addTrack(event.track);
       }
-      remoteStreamRef.current = remoteStream;
-      if (!remoteAudioRef.current) return;
-      remoteAudioRef.current.autoplay = true;
-      remoteAudioRef.current.playsInline = true;
-      remoteAudioRef.current.srcObject = remoteStream;
-      remoteAudioRef.current.muted = false;
-      remoteAudioRef.current.volume = 1;
-      remoteAudioRef.current.play().catch(() => {
-        toast.error("Audio blocked hai. Call screen par tap karke audio allow karo.");
-      });
+      attachRemoteAudioStream(remoteStream);
     };
 
     peerConnection.onconnectionstatechange = () => {
-      if (["failed", "closed", "disconnected"].includes(peerConnection.connectionState)) {
+      if (["failed", "closed"].includes(peerConnection.connectionState)) {
         if (callStateRef.current.status !== "idle") {
           resetCall();
         }
       }
     };
 
-    const localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-    localStreamRef.current = localStream;
-    const audioTracks = localStream.getAudioTracks();
-    if (audioTracks.length === 0) {
-      throw new Error("Microphone audio track nahi mila. Mic permission check karo.");
-    }
-    audioTracks.forEach((track) => {
-      track.enabled = true;
-      if (peerConnection.addTransceiver) {
-        peerConnection.addTransceiver(track, { direction: "sendrecv", streams: [localStream] });
-      } else {
-        peerConnection.addTrack(track, localStream);
-      }
-    });
     return peerConnection;
   }
 
@@ -542,10 +590,12 @@ export default function HomePage() {
       rememberCall(selectedUser, "outgoing");
 
       const peerConnection = await createPeerConnection(selectedUser._id);
+      await addLocalAudioTracks(peerConnection);
       const offer = await peerConnection.createOffer();
       await peerConnection.setLocalDescription(offer);
+      await waitForIceGatheringComplete(peerConnection);
 
-      await sendCallSignal("invite", selectedUser._id, { caller: getCallerSnapshot(), offer });
+      await sendCallSignal("invite", selectedUser._id, { caller: getCallerSnapshot(), offer: peerConnection.localDescription });
       await flushLocalIceCandidates(selectedUser._id);
     } catch (error) {
       resetCall();
@@ -562,11 +612,13 @@ export default function HomePage() {
       setCallState((prev) => ({ ...prev, status: "connecting" }));
       const peerConnection = await createPeerConnection(peerId);
       await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+      await addLocalAudioTracks(peerConnection);
       await flushQueuedIceCandidates();
 
       const answer = await peerConnection.createAnswer();
       await peerConnection.setLocalDescription(answer);
-      await sendCallSignal("accept", peerId, { answer });
+      await waitForIceGatheringComplete(peerConnection);
+      await sendCallSignal("accept", peerId, { answer: peerConnection.localDescription });
       await flushLocalIceCandidates(peerId);
 
       setCallState((prev) => ({ ...prev, status: "active", startedAt: prev.startedAt || Date.now() }));
