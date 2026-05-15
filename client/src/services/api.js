@@ -21,7 +21,11 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     const message = error.response?.data?.message || "";
-    const isSessionReplaced = error.response?.status === 401 && message.toLowerCase().includes("another active session");
+    const shouldSkipSessionReplacedHandler = error.config?.skipSessionReplacedHandler;
+    const isSessionReplaced =
+      !shouldSkipSessionReplacedHandler &&
+      error.response?.status === 401 &&
+      message.toLowerCase().includes("another active session");
 
     if (isSessionReplaced) {
       localStorage.removeItem("chat_token");

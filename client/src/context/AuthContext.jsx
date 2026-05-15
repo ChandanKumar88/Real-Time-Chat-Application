@@ -140,7 +140,7 @@ export function AuthProvider({ children }) {
   const logout = useCallback(async () => {
     try {
       if (localStorage.getItem("chat_token")) {
-        await api.post("/auth/logout");
+        await api.post("/auth/logout", null, { skipSessionReplacedHandler: true });
       }
     } catch {
       // Local logout should still work even if the server is unreachable.
