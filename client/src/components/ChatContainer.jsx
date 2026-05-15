@@ -46,6 +46,7 @@ export default function ChatContainer({
   const ignoreNextDocumentClickRef = useRef(false);
   const [mediaError, setMediaError] = useState("");
   const [openMenuId, setOpenMenuId] = useState("");
+  const [menuPosition, setMenuPosition] = useState(null);
   const [isCallMenuOpen, setIsCallMenuOpen] = useState(false);
   const [swipeState, setSwipeState] = useState(null);
   const isDark = theme === "dark";
@@ -65,6 +66,7 @@ export default function ChatContainer({
         return;
       }
       setOpenMenuId("");
+      setMenuPosition(null);
     }
 
     function handleKeyDown(event) {
@@ -197,6 +199,7 @@ export default function ChatContainer({
       longPressStateRef.current.triggered = true;
       ignoreNextDocumentClickRef.current = true;
       setSwipeState(null);
+      setMenuPosition(null);
       setOpenMenuId(message._id);
       navigator.vibrate?.(20);
     }, 550);
@@ -247,6 +250,39 @@ export default function ChatContainer({
     clearLongPressTimer();
     longPressStateRef.current = null;
     setSwipeState(null);
+  }
+
+  function openMessageMenu(message, event, isMine) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (openMenuId === message._id) {
+      setOpenMenuId("");
+      setMenuPosition(null);
+      return;
+    }
+
+    const menuWidth = isMine ? 176 : 150;
+    const menuHeight = isMine ? 112 : 58;
+    const gap = 8;
+    const sourceRect = event.currentTarget?.getBoundingClientRect?.() || {
+      left: event.clientX,
+      right: event.clientX,
+      top: event.clientY,
+      bottom: event.clientY,
+    };
+
+    let left = isMine ? sourceRect.right - menuWidth : sourceRect.left;
+    let top = sourceRect.bottom + gap;
+    left = Math.max(gap, Math.min(left, window.innerWidth - menuWidth - gap));
+
+    if (top + menuHeight > window.innerHeight - 84) {
+      top = sourceRect.top - menuHeight - gap;
+    }
+    top = Math.max(gap, Math.min(top, window.innerHeight - menuHeight - gap));
+
+    setMenuPosition({ left, top, width: menuWidth });
+    setOpenMenuId(message._id);
   }
 
   if (!selectedUser) {
@@ -407,8 +443,7 @@ export default function ChatContainer({
               onTouchEnd={() => handleTouchEnd(m)}
               onTouchCancel={cancelTouchActions}
               onContextMenu={(event) => {
-                event.preventDefault();
-                setOpenMenuId(m._id);
+                openMessageMenu(m, event, isMine);
               }}
             >
               {swipeOffset > 10 && (
@@ -429,8 +464,7 @@ export default function ChatContainer({
                     type="button"
                     title="Message options"
                     onClick={(event) => {
-                      event.stopPropagation();
-                      setOpenMenuId((id) => (id === m._id ? "" : m._id));
+                      openMessageMenu(m, event, isMine);
                     }}
                     className={`absolute top-1 hidden h-7 w-7 items-center justify-center rounded-full text-sm opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100 sm:inline-flex ${
                       isMine ? "right-1 bg-black/10 text-white hover:bg-black/20" : "right-1 bg-black/10 text-slate-200 hover:bg-black/20"
@@ -442,11 +476,19 @@ export default function ChatContainer({
                   {openMenuId === m._id && (
                     <div
                       onClick={(event) => event.stopPropagation()}
-                      className={`fixed bottom-[84px] left-3 right-3 z-50 overflow-hidden rounded-2xl border py-1.5 text-sm shadow-2xl backdrop-blur-md sm:absolute sm:bottom-auto sm:left-auto sm:right-auto sm:top-0 sm:z-30 sm:min-w-[148px] sm:rounded-xl ${
-                        isMine ? "sm:right-[calc(100%+8px)]" : "sm:left-[calc(100%+8px)]"
-                      } ${
+                      className={`fixed bottom-[84px] left-3 right-3 z-50 overflow-hidden rounded-2xl border py-1.5 text-sm shadow-2xl backdrop-blur-md sm:bottom-auto sm:left-auto sm:right-auto sm:z-50 sm:rounded-xl ${
                         isDark ? "border-white/10 bg-[#15151c] text-slate-100" : "border-slate-200 bg-white text-slate-800"
                       }`}
+                      style={
+                        menuPosition
+                          ? {
+                              left: `${menuPosition.left}px`,
+                              top: `${menuPosition.top}px`,
+                              right: "auto",
+                              width: `${menuPosition.width}px`,
+                            }
+                          : undefined
+                      }
                     >
                       <button
                         type="button"
