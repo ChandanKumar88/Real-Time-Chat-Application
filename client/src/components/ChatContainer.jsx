@@ -46,7 +46,6 @@ export default function ChatContainer({
   const ignoreNextDocumentClickRef = useRef(false);
   const [mediaError, setMediaError] = useState("");
   const [openMenuId, setOpenMenuId] = useState("");
-  const [menuPosition, setMenuPosition] = useState(null);
   const [isCallMenuOpen, setIsCallMenuOpen] = useState(false);
   const [swipeState, setSwipeState] = useState(null);
   const isDark = theme === "dark";
@@ -66,7 +65,6 @@ export default function ChatContainer({
         return;
       }
       setOpenMenuId("");
-      setMenuPosition(null);
     }
 
     function handleKeyDown(event) {
@@ -199,7 +197,6 @@ export default function ChatContainer({
       longPressStateRef.current.triggered = true;
       ignoreNextDocumentClickRef.current = true;
       setSwipeState(null);
-      setMenuPosition(null);
       setOpenMenuId(message._id);
       navigator.vibrate?.(20);
     }, 550);
@@ -258,30 +255,9 @@ export default function ChatContainer({
 
     if (openMenuId === message._id) {
       setOpenMenuId("");
-      setMenuPosition(null);
       return;
     }
 
-    const menuWidth = isMine ? 176 : 150;
-    const menuHeight = isMine ? 112 : 58;
-    const gap = 8;
-    const sourceRect = event.currentTarget?.getBoundingClientRect?.() || {
-      left: event.clientX,
-      right: event.clientX,
-      top: event.clientY,
-      bottom: event.clientY,
-    };
-
-    let left = isMine ? sourceRect.right - menuWidth : sourceRect.left;
-    let top = sourceRect.bottom + gap;
-    left = Math.max(gap, Math.min(left, window.innerWidth - menuWidth - gap));
-
-    if (top + menuHeight > window.innerHeight - 84) {
-      top = sourceRect.top - menuHeight - gap;
-    }
-    top = Math.max(gap, Math.min(top, window.innerHeight - menuHeight - gap));
-
-    setMenuPosition({ left, top, width: menuWidth });
     setOpenMenuId(message._id);
   }
 
@@ -474,44 +450,64 @@ export default function ChatContainer({
                     <FiChevronDown />
                   </button>
                   {openMenuId === m._id && (
-                    <div
-                      onClick={(event) => event.stopPropagation()}
-                      className={`fixed bottom-[84px] left-3 right-3 z-50 overflow-hidden rounded-2xl border py-1.5 text-sm shadow-2xl backdrop-blur-md sm:bottom-auto sm:left-auto sm:right-auto sm:z-50 sm:rounded-xl ${
-                        isDark ? "border-white/10 bg-[#15151c] text-slate-100" : "border-slate-200 bg-white text-slate-800"
-                      }`}
-                      style={
-                        menuPosition
-                          ? {
-                              left: `${menuPosition.left}px`,
-                              top: `${menuPosition.top}px`,
-                              right: "auto",
-                              width: `${menuPosition.width}px`,
-                            }
-                          : undefined
-                      }
-                    >
-                      <button
-                        type="button"
-                        onClick={() => selectReply(m)}
-                        className={`flex w-full items-center gap-3 whitespace-nowrap px-3.5 py-2.5 text-left font-medium ${isDark ? "hover:bg-white/10" : "hover:bg-slate-100"}`}
+                    <>
+                      <div
+                        onClick={(event) => event.stopPropagation()}
+                        className={`fixed bottom-[84px] left-3 right-3 z-50 overflow-hidden rounded-2xl border py-1.5 text-sm shadow-2xl backdrop-blur-md sm:hidden ${
+                          isDark ? "border-white/10 bg-[#15151c] text-slate-100" : "border-slate-200 bg-white text-slate-800"
+                        }`}
                       >
-                        <FiCornerUpLeft className="h-4 w-4 shrink-0" />
-                        Reply
-                      </button>
-                      {isMine && !m.pending && (
                         <button
                           type="button"
-                          onClick={() => {
-                            setOpenMenuId("");
-                            onDeleteMessage?.(m._id);
-                          }}
+                          onClick={() => selectReply(m)}
                           className={`flex w-full items-center gap-3 whitespace-nowrap px-3.5 py-2.5 text-left font-medium ${isDark ? "hover:bg-white/10" : "hover:bg-slate-100"}`}
                         >
-                          <FiTrash2 className="h-4 w-4 shrink-0" />
-                          Delete
+                          <FiCornerUpLeft className="h-4 w-4 shrink-0" />
+                          Reply
                         </button>
-                      )}
-                    </div>
+                        {isMine && !m.pending && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOpenMenuId("");
+                              onDeleteMessage?.(m._id);
+                            }}
+                            className={`flex w-full items-center gap-3 whitespace-nowrap px-3.5 py-2.5 text-left font-medium ${isDark ? "hover:bg-white/10" : "hover:bg-slate-100"}`}
+                          >
+                            <FiTrash2 className="h-4 w-4 shrink-0" />
+                            Delete
+                          </button>
+                        )}
+                      </div>
+                      <div
+                        onClick={(event) => event.stopPropagation()}
+                        className={`absolute top-[calc(100%+6px)] z-50 hidden overflow-hidden rounded-xl border py-1.5 text-sm shadow-2xl backdrop-blur-md sm:block ${
+                          isMine ? "right-0 w-44" : "left-0 w-36"
+                        } ${isDark ? "border-white/10 bg-[#15151c] text-slate-100" : "border-slate-200 bg-white text-slate-800"}`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => selectReply(m)}
+                          className={`flex w-full items-center gap-3 whitespace-nowrap px-3.5 py-2.5 text-left font-medium ${isDark ? "hover:bg-white/10" : "hover:bg-slate-100"}`}
+                        >
+                          <FiCornerUpLeft className="h-4 w-4 shrink-0" />
+                          Reply
+                        </button>
+                        {isMine && !m.pending && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOpenMenuId("");
+                              onDeleteMessage?.(m._id);
+                            }}
+                            className={`flex w-full items-center gap-3 whitespace-nowrap px-3.5 py-2.5 text-left font-medium ${isDark ? "hover:bg-white/10" : "hover:bg-slate-100"}`}
+                          >
+                            <FiTrash2 className="h-4 w-4 shrink-0" />
+                            Delete
+                          </button>
+                        )}
+                      </div>
+                    </>
                   )}
                   {!!getMessageId(m.replyTo) && (
                     <div className={`mb-2 max-w-[min(70vw,320px)] rounded-xl border-l-2 px-2.5 py-2 text-xs ${isMine ? "border-white/70 bg-black/15 text-white/90" : isDark ? "border-violet-300 bg-black/25 text-slate-200" : "border-violet-500 bg-white/80 text-slate-700"}`}>
