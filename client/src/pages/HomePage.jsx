@@ -75,6 +75,7 @@ export default function HomePage() {
   const [isMediaOpen, setIsMediaOpen] = useState(false);
   const [isSharedMediaOpen, setIsSharedMediaOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [activeDesktopTab, setActiveDesktopTab] = useState("chats");
   const [messageSearch, setMessageSearch] = useState("");
   const [activeSearchIndex, setActiveSearchIndex] = useState(0);
   const [previewMedia, setPreviewMedia] = useState(null);
@@ -388,7 +389,17 @@ export default function HomePage() {
     toast("Video call UI ready hai, video calling logic abhi add nahi hua.");
   }
 
+  function handleDesktopTabChange(tab) {
+    setActiveDesktopTab(tab);
+    if (tab === "calls") {
+      setIsSearchOpen(false);
+      setIsSharedMediaOpen(false);
+      setIsMediaOpen(false);
+    }
+  }
+
   const isPortraitPreviewVideo = previewMedia?.type === "video" && previewVideoRatio && previewVideoRatio < 1;
+  const isDesktopRightPanelOpen = activeDesktopTab === "chats" && (isSearchOpen || isSharedMediaOpen);
 
   async function unlockEncryptedChats(event) {
     event.preventDefault();
@@ -1087,8 +1098,8 @@ export default function HomePage() {
         </div>
       )}
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 px-2 pb-2 lg:grid-cols-12 lg:gap-3 lg:px-0 lg:pb-0">
-      <div className="hidden lg:col-span-4 lg:block lg:h-full xl:col-span-3">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 overflow-hidden px-2 pb-2 lg:grid-cols-12 lg:gap-3 lg:px-0 lg:pb-0">
+      <div className="hidden min-h-0 lg:col-span-4 lg:block lg:h-full xl:col-span-3">
         <Sidebar
           users={filteredUsers}
           search={search}
@@ -1099,6 +1110,8 @@ export default function HomePage() {
           theme={theme}
           toggleTheme={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
           callHistory={callHistory}
+          activeTab={activeDesktopTab}
+          onTabChange={handleDesktopTabChange}
         />
       </div>
 
@@ -1121,7 +1134,58 @@ export default function HomePage() {
         />
       )}
 
-      <div className={`flex min-h-0 h-full flex-col lg:col-span-8 ${isSearchOpen || isSharedMediaOpen ? "xl:col-span-6" : "xl:col-span-9"}`}>
+      <div className={`flex min-h-0 h-full flex-col lg:col-span-8 ${isDesktopRightPanelOpen ? "xl:col-span-6" : "xl:col-span-9"}`}>
+        <div
+          className={`${
+            activeDesktopTab === "calls" ? "hidden lg:flex" : "hidden"
+          } h-full min-h-0 flex-col items-center justify-center rounded-2xl p-8 text-center shadow-2xl backdrop-blur-md ${
+            theme === "dark" ? "border border-white/20 bg-black/35" : "border border-slate-200/80 bg-white/75"
+          }`}
+        >
+          <div className="mb-6 grid h-20 w-20 place-items-center rounded-3xl bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white shadow-xl shadow-fuchsia-900/20">
+            <FiPhone className="text-3xl" />
+          </div>
+          <h2 className={`text-2xl font-semibold ${theme === "dark" ? "text-slate-100" : "text-slate-900"}`}>Calls</h2>
+          <p className={`mt-2 max-w-md text-sm leading-6 ${theme === "dark" ? "text-slate-400" : "text-slate-600"}`}>
+            Select a recent call from the left panel or start a new call from an open chat.
+          </p>
+          <div className="mt-7 grid w-full max-w-xl grid-cols-2 gap-3">
+            {[
+              { label: "Start call", icon: FiPhone },
+              { label: "New call link", icon: FiPlus },
+              { label: "Call a number", icon: FiMoreHorizontal },
+              { label: "Schedule call", icon: FiVideo },
+            ].map((item) => {
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.label}
+                  type="button"
+                  className={`flex items-center gap-3 rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition ${
+                    theme === "dark"
+                      ? "border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
+                      : "border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-100"
+                  }`}
+                >
+                  <span
+                    className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${
+                      theme === "dark" ? "bg-violet-500/20 text-violet-200" : "bg-violet-100 text-violet-700"
+                    }`}
+                  >
+                    <Icon />
+                  </span>
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
+          <p className={`mt-8 inline-flex items-center gap-2 text-xs ${theme === "dark" ? "text-slate-500" : "text-slate-500"}`}>
+            <FiLock />
+            Your personal calls are end-to-end encrypted
+          </p>
+        </div>
+
+        <div className={`${activeDesktopTab === "calls" ? "flex lg:hidden" : "flex"} min-h-0 h-full flex-col`}>
         {isCallOpen && isCallMinimized && (
           <div
             role="button"
@@ -1237,9 +1301,10 @@ export default function HomePage() {
             }
           }}
         />
+        </div>
       </div>
 
-      {isSearchOpen && selectedUser ? (
+      {activeDesktopTab === "chats" && isSearchOpen && selectedUser ? (
         <aside
           className={`hidden h-full overflow-hidden rounded-3xl p-4 shadow-2xl backdrop-blur transition lg:fixed lg:bottom-3 lg:right-3 lg:top-3 lg:z-40 lg:block lg:w-[360px] lg:max-w-[calc(100vw-420px)] xl:static xl:col-span-3 xl:w-auto xl:max-w-none ${
             theme === "dark" ? "border border-white/20 bg-[#11131a]/96" : "border border-slate-300 bg-white/95"
@@ -1314,7 +1379,7 @@ export default function HomePage() {
         </aside>
       ) : null}
 
-      {isSharedMediaOpen && selectedUser ? (
+      {activeDesktopTab === "chats" && isSharedMediaOpen && selectedUser ? (
         <div className="hidden h-full transition lg:fixed lg:bottom-3 lg:right-3 lg:top-3 lg:z-40 lg:block lg:w-[360px] lg:max-w-[calc(100vw-420px)] xl:static xl:col-span-3 xl:w-auto xl:max-w-none">
           <RightSidebar
             selectedUser={selectedUser}

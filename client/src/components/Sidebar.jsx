@@ -16,10 +16,22 @@ export default function Sidebar({
   callHistory = [],
   isMobileOpen = false,
   onCloseMobile,
+  activeTab,
+  onTabChange,
 }) {
   const [showMenu, setShowMenu] = useState(false);
-  const [activeTab, setActiveTab] = useState("chats");
+  const [localActiveTab, setLocalActiveTab] = useState("chats");
   const isDark = theme === "dark";
+  const currentTab = isMobileOpen ? "chats" : activeTab || localActiveTab;
+
+  function handleTabChange(nextTab) {
+    if (onTabChange) {
+      onTabChange(nextTab);
+      return;
+    }
+
+    setLocalActiveTab(nextTab);
+  }
 
   const filtered = users.filter((u) => {
     const q = search.trim().toLowerCase();
@@ -28,13 +40,13 @@ export default function Sidebar({
 
   return (
     <aside
-      className={`h-full rounded-2xl p-3 shadow-2xl backdrop-blur-md ${
+      className={`flex h-full min-h-0 flex-col overflow-hidden rounded-2xl p-3 shadow-2xl backdrop-blur-md ${
         isDark ? "border border-white/20 bg-black/35" : "border border-slate-200/80 bg-white/75"
       } ${
         isMobileOpen ? "fixed inset-y-3 left-3 z-30 w-[88%] max-w-sm" : ""
       }`}
     >
-      <div className="mb-4 flex items-center justify-between px-1">
+      <div className="mb-4 flex shrink-0 items-center justify-between px-1">
         <div className="flex items-center gap-2">
           <img src={logoIcon} alt="QuickChat" className="h-5 w-5" />
           <h1 className={`text-lg font-medium ${isDark ? "text-white" : "text-slate-900"}`}>QuickChat</h1>
@@ -91,18 +103,18 @@ export default function Sidebar({
         </div>
       </div>
 
-      <div className={`mb-4 hidden grid-cols-2 rounded-2xl p-1 lg:grid ${isDark ? "bg-white/5" : "bg-slate-100"}`}>
+      <div className={`mb-4 hidden shrink-0 grid-cols-2 rounded-2xl p-1 lg:grid ${isDark ? "bg-white/5" : "bg-slate-100"}`}>
         {[
           { id: "chats", label: "Chats", icon: FiMessageCircle },
           { id: "calls", label: "Calls", icon: FiPhone },
         ].map((tab) => {
           const Icon = tab.icon;
-          const active = activeTab === tab.id;
+          const active = currentTab === tab.id;
           return (
             <button
               key={tab.id}
               type="button"
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => handleTabChange(tab.id)}
               className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition ${
                 active
                   ? isDark
@@ -120,9 +132,9 @@ export default function Sidebar({
         })}
       </div>
 
-      {activeTab === "chats" ? (
-        <>
-          <div className="relative mb-4">
+      {currentTab === "chats" ? (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="relative mb-4 shrink-0">
             <FiSearch className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 ${isDark ? "text-slate-400/80" : "text-slate-500"}`} />
             <input
               className={`w-full rounded-full py-2.5 pl-10 pr-4 text-sm outline-none transition focus:border-violet-400 ${
@@ -136,7 +148,7 @@ export default function Sidebar({
             />
           </div>
 
-          <div className="chat-scroll max-h-[70vh] space-y-1 overflow-y-auto pr-1">
+          <div className="chat-scroll min-h-0 flex-1 space-y-1 overflow-x-hidden overflow-y-auto pr-1">
             {filtered.map((u) => {
               const active = selectedUser?._id === u._id;
               return (
@@ -182,10 +194,11 @@ export default function Sidebar({
               );
             })}
           </div>
-        </>
+        </div>
       ) : (
-        <div className="chat-scroll max-h-[76vh] space-y-2 overflow-y-auto pr-1">
-          <p className={`px-1 text-xs font-semibold uppercase tracking-wide ${isDark ? "text-slate-400" : "text-slate-500"}`}>Recent calls</p>
+        <div className="flex min-h-0 flex-1 flex-col">
+          <p className={`mb-3 shrink-0 px-1 text-xs font-semibold uppercase tracking-wide ${isDark ? "text-slate-400" : "text-slate-500"}`}>Recent calls</p>
+          <div className="chat-scroll min-h-0 flex-1 space-y-2 overflow-x-hidden overflow-y-auto pr-1">
           {callHistory.length ? (
             callHistory.map((call) => {
               const statusClass =
@@ -221,6 +234,7 @@ export default function Sidebar({
               No call history yet.
             </div>
           )}
+          </div>
         </div>
       )}
     </aside>
