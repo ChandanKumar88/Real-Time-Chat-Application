@@ -56,8 +56,8 @@ export default function HomePage() {
     loadUsers,
     selectedUser,
     setSelectedUser,
-    loadMessages,
     messages,
+    messagesLoading,
     sendMessage,
     markSeen,
     deleteMessage,
@@ -157,9 +157,6 @@ export default function HomePage() {
     if (user?.encryptionPassphraseRequired) return;
     if (!selectedUser) return;
     setReplyToMessage(null);
-    loadMessages(selectedUser._id).catch((error) => {
-      toast.error(error?.response?.data?.message || "Failed to load messages");
-    });
     return () => stopTyping(selectedUser._id);
   }, [selectedUser, user?.encryptionPassphraseRequired]);
 
@@ -1238,6 +1235,7 @@ export default function HomePage() {
           user={user}
           selectedUser={selectedUser}
           messages={messages}
+          messagesLoading={messagesLoading}
           text={text}
           setText={setText}
           onTextChange={(value) => {

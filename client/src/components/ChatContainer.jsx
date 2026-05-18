@@ -12,6 +12,7 @@ export default function ChatContainer({
   user,
   selectedUser,
   messages,
+  messagesLoading = false,
   text,
   setText,
   onTextChange,
@@ -399,6 +400,17 @@ export default function ChatContainer({
         className={`chat-scroll min-h-0 overflow-x-hidden overflow-y-auto rounded-xl ${isDark ? "bg-black/20" : "bg-white/60"}`}
       >
         <div className="space-y-2 p-1.5 sm:p-3">
+        {messagesLoading && (
+          <div className="flex justify-center py-3">
+            <div
+              className={`rounded-full px-4 py-2 text-xs font-medium shadow-sm ${
+                isDark ? "bg-white/10 text-slate-300" : "bg-slate-100 text-slate-600"
+              }`}
+            >
+              Loading messages...
+            </div>
+          </div>
+        )}
         {messages.map((m) => {
           const isMine = m.senderId === user._id;
           const avatarSrc = isMine ? user?.profilePic || "https://placehold.co/28x28?text=U" : selectedUser?.profilePic || "https://placehold.co/28x28?text=U";
