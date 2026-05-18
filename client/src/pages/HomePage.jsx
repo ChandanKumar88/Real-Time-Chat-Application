@@ -24,7 +24,7 @@ import {
 } from "react-icons/fi";
 import { useAuth } from "../context/AuthContext";
 import { useChat } from "../context/ChatContext";
-import { api } from "../services/api";
+import { api, isManualLogoutInProgress } from "../services/api";
 import Sidebar from "../components/Sidebar";
 import ChatContainer from "../components/ChatContainer";
 import RightSidebar from "../components/RightSidebar";
@@ -112,7 +112,9 @@ export default function HomePage() {
 
   useEffect(() => {
     if (user?.encryptionPassphraseRequired) return;
-    loadUsers().catch(() => toast.error("Failed to load users"));
+    loadUsers().catch(() => {
+      if (!isManualLogoutInProgress()) toast.error("Failed to load users");
+    });
   }, [user?.encryptionPassphraseRequired]);
 
   useEffect(() => {

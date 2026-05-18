@@ -11,6 +11,22 @@ export const api = axios.create({
   baseURL: API_BASE_URL,
 });
 
+let manualLogoutInProgress = false;
+
+export function beginManualLogout() {
+  manualLogoutInProgress = true;
+  sessionStorage.setItem("quickchat_manual_logout", "1");
+}
+
+export function endManualLogout() {
+  manualLogoutInProgress = false;
+  sessionStorage.removeItem("quickchat_manual_logout");
+}
+
+export function isManualLogoutInProgress() {
+  return manualLogoutInProgress || sessionStorage.getItem("quickchat_manual_logout") === "1";
+}
+
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("chat_token");
   if (token) config.headers.Authorization = `Bearer ${token}`;
@@ -24,6 +40,7 @@ api.interceptors.response.use(
     const shouldSkipSessionReplacedHandler = error.config?.skipSessionReplacedHandler;
     const isSessionReplaced =
       !shouldSkipSessionReplacedHandler &&
+      !isManualLogoutInProgress() &&
       error.response?.status === 401 &&
       message.toLowerCase().includes("another active session");
 

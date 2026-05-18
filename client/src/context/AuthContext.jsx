@@ -1,6 +1,6 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { api } from "../services/api";
+import { api, beginManualLogout, endManualLogout, isManualLogoutInProgress } from "../services/api";
 import { ensureRecoverableKeyPair, getLocalKeyPair } from "../utils/e2ee";
 
 const AuthContext = createContext(null);
@@ -8,6 +8,7 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const logoutInFlightRef = useRef(false);
 
   const token = localStorage.getItem("chat_token");
 
@@ -52,6 +53,7 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     function handleSessionReplaced(event) {
+      if (isManualLogoutInProgress()) return;
       setUser(null);
       toast.error(event.detail?.message || "This account was logged in on another device.");
     }
@@ -70,6 +72,7 @@ export function AuthProvider({ children }) {
           encryptionPassphraseRequired: needsRecoveryPassphrase(data.data),
           encryptionRecoveryRequired: false,
         });
+        endManualLogout();
       } catch {
         localStorage.removeItem("chat_token");
       } finally {
@@ -86,6 +89,7 @@ export function AuthProvider({ children }) {
 
   const verifySignupOtp = useCallback(async (payload) => {
     const { data } = await api.post("/auth/signup/verify", payload);
+    endManualLogout();
     localStorage.setItem("chat_token", data.data.token);
     const nextUser = await syncRecoverableEncryptionKey(data.data.user, payload.password);
     setUser(nextUser);
@@ -94,6 +98,7 @@ export function AuthProvider({ children }) {
 
   const login = useCallback(async (payload) => {
     const { data } = await api.post("/auth/login", payload);
+    endManualLogout();
     localStorage.setItem("chat_token", data.data.token);
     const nextUser = await syncRecoverableEncryptionKey(data.data.user, payload.password);
     setUser(nextUser);
@@ -102,6 +107,7 @@ export function AuthProvider({ children }) {
 
   const googleLogin = useCallback(async (credential) => {
     const { data } = await api.post("/auth/google", { credential });
+    endManualLogout();
     localStorage.setItem("chat_token", data.data.token);
     const nextUser = {
       ...data.data.user,
@@ -138,6 +144,10 @@ export function AuthProvider({ children }) {
   }, [syncRecoverableEncryptionKey, user]);
 
   const logout = useCallback(async () => {
+    if (logoutInFlightRef.current) return;
+    logoutInFlightRef.current = true;
+    beginManualLogout();
+
     try {
       if (localStorage.getItem("chat_token")) {
         await api.post("/auth/logout", null, { skipSessionReplacedHandler: true });
@@ -147,6 +157,7 @@ export function AuthProvider({ children }) {
     } finally {
       localStorage.removeItem("chat_token");
       setUser(null);
+      logoutInFlightRef.current = false;
     }
   }, []);
 
