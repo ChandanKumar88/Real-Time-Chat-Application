@@ -12,21 +12,23 @@ export default function RightSidebar({
   onCloseMobile,
 }) {
   const isDark = theme === "dark";
+  const sharedMedia = messages.filter((m) => m.image || m.video);
+
   return (
     <aside
-      className={`h-full overflow-hidden rounded-3xl p-4 shadow-xl backdrop-blur ${
+      className={`flex h-full min-h-0 flex-col overflow-hidden rounded-3xl p-4 shadow-xl backdrop-blur ${
         mobile
           ? `fixed inset-x-3 bottom-3 z-40 max-h-[72vh] overflow-hidden lg:hidden ${
               isDark ? "border border-white/20 bg-[#11131a]/96" : "border border-slate-300 bg-white/95"
             }`
-          : `hidden lg:block ${isDark ? "border border-white/20 bg-black/35" : "border border-slate-300 bg-white/70"}`
+          : `hidden lg:flex ${isDark ? "border border-white/20 bg-black/35" : "border border-slate-300 bg-white/70"}`
       }`}
     >
       {!selectedUser ? (
         <p className={`text-sm ${isDark ? "text-slate-400" : "text-slate-500"}`}>Select a user to view profile details.</p>
       ) : (
         <>
-          <div className="mb-4 flex items-center justify-between">
+          <div className="mb-4 flex shrink-0 items-center justify-between">
             <p className={`text-sm font-semibold ${isDark ? "text-slate-100" : "text-slate-900"}`}>Shared media</p>
             {(mobile || onCloseMobile) && (
               <button
@@ -38,76 +40,70 @@ export default function RightSidebar({
               </button>
             )}
           </div>
-          <ProfileAvatar src={selectedUser.profilePic} name={selectedUser.fullName} className="mx-auto h-20 w-20 rounded-full object-cover sm:h-28 sm:w-28" />
-          <h3 className={`mt-3 text-center text-lg font-semibold sm:text-xl ${isDark ? "text-slate-100" : "text-slate-900"}`}>{selectedUser.fullName}</h3>
+          <ProfileAvatar src={selectedUser.profilePic} name={selectedUser.fullName} className="mx-auto h-20 w-20 shrink-0 rounded-full object-cover sm:h-28 sm:w-28" />
+          <h3 className={`mt-3 shrink-0 text-center text-lg font-semibold sm:text-xl ${isDark ? "text-slate-100" : "text-slate-900"}`}>{selectedUser.fullName}</h3>
           <p
-            className={`mt-1 flex items-center justify-center gap-1.5 text-xs ${
+            className={`mt-1 flex shrink-0 items-center justify-center gap-1.5 text-xs ${
               selectedUser.isOnline ? "text-emerald-500" : isDark ? "text-slate-400" : "text-slate-500"
             }`}
           >
             <span className={`h-1.5 w-1.5 rounded-full ${selectedUser.isOnline ? "bg-emerald-500" : "bg-slate-400"}`} />
             {selectedUser.isOnline ? "Online" : "Offline"}
           </p>
-          <p className={`mt-1 text-center text-sm ${isDark ? "text-slate-400" : "text-slate-500"}`}>{selectedUser.bio || "No bio available."}</p>
+          <p className={`mt-1 shrink-0 text-center text-sm ${isDark ? "text-slate-400" : "text-slate-500"}`}>{selectedUser.bio || "No bio available."}</p>
 
-          <h4 className={`mt-6 mb-2 text-sm font-semibold uppercase tracking-wide ${isDark ? "text-slate-300" : "text-slate-600"}`}>Media</h4>
-          <div className="chat-scroll grid max-h-[38vh] grid-cols-2 gap-2 overflow-y-auto pr-1">
-            {messages
-              .filter((m) => m.image || m.video)
-              .map((m) =>
-                m.image ? (
-                  <div key={m._id} className="group relative">
+          <h4 className={`mt-6 mb-2 shrink-0 text-sm font-semibold uppercase tracking-wide ${isDark ? "text-slate-300" : "text-slate-600"}`}>Media</h4>
+          <div className="chat-scroll grid min-h-0 flex-1 grid-cols-2 content-start gap-2 overflow-x-hidden overflow-y-auto pr-1">
+            {sharedMedia.map((m) =>
+              m.image ? (
+                <div key={m._id} className="group relative">
+                  <button
+                    type="button"
+                    onClick={() => onPreviewMedia?.({ id: m._id, type: "image", src: m.image })}
+                    className="block w-full"
+                  >
+                    <img src={m.image} className="h-24 w-full rounded-xl object-cover" />
+                  </button>
+                  {m.senderId === currentUserId && (
                     <button
                       type="button"
-                      onClick={() => onPreviewMedia?.({ id: m._id, type: "image", src: m.image })}
-                      className="block w-full"
+                      onClick={() => onDeleteMessage?.(m._id)}
+                      className="absolute right-1 top-1 hidden rounded bg-black/70 p-1 text-white group-hover:block"
+                      title="Delete media"
                     >
-                      <img src={m.image} className="h-24 w-full rounded-xl object-cover" />
+                      <FiTrash2 size={12} />
                     </button>
-                    {m.senderId === currentUserId && (
-                      <button
-                        type="button"
-                        onClick={() => onDeleteMessage?.(m._id)}
-                        className="absolute right-1 top-1 hidden rounded bg-black/70 p-1 text-white group-hover:block"
-                        title="Delete media"
-                      >
-                        <FiTrash2 size={12} />
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <div key={m._id} className="group relative">
+                  )}
+                </div>
+              ) : (
+                <div key={m._id} className="group relative">
+                  <button
+                    type="button"
+                    onClick={() => onPreviewMedia?.({ id: m._id, type: "video", src: m.video })}
+                    className="block w-full"
+                  >
+                    <video className="h-24 w-full rounded-xl object-cover">
+                      <source src={m.video} />
+                    </video>
+                  </button>
+                  {m.senderId === currentUserId && (
                     <button
                       type="button"
-                      onClick={() => onPreviewMedia?.({ id: m._id, type: "video", src: m.video })}
-                      className="block w-full"
+                      onClick={() => onDeleteMessage?.(m._id)}
+                      className="absolute right-1 top-1 hidden rounded bg-black/70 p-1 text-white group-hover:block"
+                      title="Delete media"
                     >
-                      <video className="h-24 w-full rounded-xl object-cover">
-                        <source src={m.video} />
-                      </video>
+                      <FiTrash2 size={12} />
                     </button>
-                    {m.senderId === currentUserId && (
-                      <button
-                        type="button"
-                        onClick={() => onDeleteMessage?.(m._id)}
-                        className="absolute right-1 top-1 hidden rounded bg-black/70 p-1 text-white group-hover:block"
-                        title="Delete media"
-                      >
-                        <FiTrash2 size={12} />
-                      </button>
-                    )}
-                  </div>
-                )
-              )}
-            {!messages.some((m) => m.image || m.video) && (
+                  )}
+                </div>
+              )
+            )}
+            {!sharedMedia.length && (
               <p className={`col-span-2 rounded-2xl px-3 py-6 text-center text-sm ${isDark ? "bg-white/5 text-slate-400" : "bg-slate-100 text-slate-500"}`}>
                 Is chat me abhi koi shared media nahi hai.
               </p>
             )}
-          </div>
-          <h4 className={`mt-5 mb-2 text-sm font-semibold uppercase tracking-wide ${isDark ? "text-slate-300" : "text-slate-600"}`}>Files</h4>
-          <div className={`rounded-2xl px-3 py-5 text-center text-sm ${isDark ? "bg-white/5 text-slate-400" : "bg-slate-100 text-slate-500"}`}>
-            Is chat me abhi koi shared files nahi hain.
           </div>
         </>
       )}

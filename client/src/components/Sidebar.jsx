@@ -21,6 +21,7 @@ export default function Sidebar({
 }) {
   const [showMenu, setShowMenu] = useState(false);
   const [localActiveTab, setLocalActiveTab] = useState("chats");
+  const [callSearch, setCallSearch] = useState("");
   const isDark = theme === "dark";
   const currentTab = isMobileOpen ? "chats" : activeTab || localActiveTab;
 
@@ -36,6 +37,14 @@ export default function Sidebar({
   const filtered = users.filter((u) => {
     const q = search.trim().toLowerCase();
     return !q || u.fullName.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
+  });
+  const filteredCalls = callHistory.filter((call) => {
+    const q = callSearch.trim().toLowerCase();
+    if (!q) return true;
+
+    return [call.name, call.statusLabel, call.status, call.type, call.time]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(q));
   });
 
   return (
@@ -197,10 +206,23 @@ export default function Sidebar({
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">
+          <div className="relative mb-4 shrink-0">
+            <FiSearch className={`pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-lg ${isDark ? "text-slate-400/80" : "text-slate-500"}`} />
+            <input
+              className={`w-full rounded-full py-3 pl-12 pr-4 text-sm outline-none transition focus:border-violet-400 ${
+                isDark
+                  ? "border border-white/10 bg-white/10 text-slate-200 placeholder:text-slate-400"
+                  : "border border-slate-300 bg-white/90 text-slate-800 placeholder:text-slate-500"
+              }`}
+              placeholder="Search name"
+              value={callSearch}
+              onChange={(e) => setCallSearch(e.target.value)}
+            />
+          </div>
           <p className={`mb-3 shrink-0 px-1 text-xs font-semibold uppercase tracking-wide ${isDark ? "text-slate-400" : "text-slate-500"}`}>Recent calls</p>
           <div className="chat-scroll min-h-0 flex-1 space-y-2 overflow-x-hidden overflow-y-auto pr-1">
-          {callHistory.length ? (
-            callHistory.map((call) => {
+          {filteredCalls.length ? (
+            filteredCalls.map((call) => {
               const statusClass =
                 call.status === "missed"
                   ? "text-rose-400"
@@ -231,7 +253,7 @@ export default function Sidebar({
             })
           ) : (
             <div className={`rounded-2xl px-3 py-8 text-center text-sm ${isDark ? "bg-white/5 text-slate-400" : "bg-slate-100 text-slate-500"}`}>
-              No call history yet.
+              {callSearch.trim() ? "No matching calls found." : "No call history yet."}
             </div>
           )}
           </div>

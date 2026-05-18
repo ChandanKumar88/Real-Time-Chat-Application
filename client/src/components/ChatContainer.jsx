@@ -396,7 +396,7 @@ export default function ChatContainer({
 
       <div
         ref={messagesContainerRef}
-        className={`chat-scroll min-h-0 overflow-y-auto rounded-xl ${isDark ? "bg-black/20" : "bg-white/60"}`}
+        className={`chat-scroll min-h-0 overflow-x-hidden overflow-y-auto rounded-xl ${isDark ? "bg-black/20" : "bg-white/60"}`}
       >
         <div className="space-y-2 p-1.5 sm:p-3">
         {messages.map((m) => {
@@ -578,7 +578,7 @@ export default function ChatContainer({
         </div>
       </div>
 
-      <form onSubmit={onSend} className={`mt-1 rounded-xl p-1.5 sm:mt-2 sm:p-2 ${isDark ? "border border-white/10 bg-black/40" : "border border-slate-300 bg-white/90"}`}>
+      <form onSubmit={onSend} className={`mt-1 shrink-0 rounded-xl p-1.5 sm:mt-2 sm:p-2 ${isDark ? "border border-white/10 bg-black/40" : "border border-slate-300 bg-white/90"}`}>
         {replyToMessage && (
           <div className={`mb-2 flex items-center gap-2 rounded-xl border-l-2 px-2.5 py-2 text-xs ${isDark ? "border-violet-300 bg-white/10 text-slate-200" : "border-violet-500 bg-slate-100 text-slate-700"}`}>
             <FiCornerUpLeft className="h-4 w-4 shrink-0 text-violet-300" />

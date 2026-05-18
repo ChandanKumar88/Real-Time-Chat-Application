@@ -1380,7 +1380,7 @@ export default function HomePage() {
       ) : null}
 
       {activeDesktopTab === "chats" && isSharedMediaOpen && selectedUser ? (
-        <div className="hidden h-full transition lg:fixed lg:bottom-3 lg:right-3 lg:top-3 lg:z-40 lg:block lg:w-[360px] lg:max-w-[calc(100vw-420px)] xl:static xl:col-span-3 xl:w-auto xl:max-w-none">
+        <div className="hidden h-full min-h-0 overflow-hidden transition lg:fixed lg:bottom-3 lg:right-3 lg:top-3 lg:z-40 lg:block lg:w-[360px] lg:max-w-[calc(100vw-420px)] xl:static xl:col-span-3 xl:w-auto xl:max-w-none">
           <RightSidebar
             selectedUser={selectedUser}
             messages={messages}
