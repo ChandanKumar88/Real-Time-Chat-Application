@@ -1,6 +1,21 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { FiChevronDown, FiCornerUpLeft, FiGrid, FiImage, FiLock, FiPhone, FiSearch, FiSend, FiTrash2, FiVideo, FiX } from "react-icons/fi";
+import {
+  FiCheckSquare,
+  FiChevronDown,
+  FiCopy,
+  FiCornerUpLeft,
+  FiGrid,
+  FiImage,
+  FiLock,
+  FiPhone,
+  FiSearch,
+  FiSend,
+  FiShare2,
+  FiTrash2,
+  FiVideo,
+  FiX,
+} from "react-icons/fi";
 import logoIcon from "../assets/logo_icon.svg";
 import ProfileAvatar from "./ProfileAvatar";
 import { processImageFile } from "../utils/image";
@@ -13,6 +28,9 @@ export default function ChatContainer({
   selectedUser,
   messages,
   messagesLoading = false,
+  olderMessagesLoading = false,
+  hasOlderMessages = false,
+  onLoadOlderMessages,
   text,
   setText,
   onTextChange,
@@ -34,6 +52,7 @@ export default function ChatContainer({
   onOpenSearchPanel,
   searchKeyword = "",
   activeSearchMessageId = "",
+  searchJumpKey = 0,
   onPreviewMedia,
   theme = "dark",
 }) {
@@ -45,17 +64,127 @@ export default function ChatContainer({
   const longPressTimerRef = useRef(null);
   const longPressStateRef = useRef(null);
   const ignoreNextDocumentClickRef = useRef(false);
+  const isUserNearBottomRef = useRef(true);
+  const initialLoadUserRef = useRef("");
+  const previousMessagesRef = useRef({ userId: "", length: 0, lastId: "" });
+  const olderMessagesInFlightRef = useRef(false);
+  const pendingOlderScrollRef = useRef(null);
   const [mediaError, setMediaError] = useState("");
   const [openMenuId, setOpenMenuId] = useState("");
   const [isCallMenuOpen, setIsCallMenuOpen] = useState(false);
   const [swipeState, setSwipeState] = useState(null);
+  const [showScrollButton, setShowScrollButton] = useState(false);
+  const [isUserNearBottom, setIsUserNearBottom] = useState(true);
+  const [newMessageCount, setNewMessageCount] = useState(0);
   const isDark = theme === "dark";
 
+  function getIsNearBottom() {
+    const el = messagesContainerRef.current;
+    if (!el) return true;
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+  }
+
+  function syncScrollButtonState() {
+    const el = messagesContainerRef.current;
+    const nearBottom = getIsNearBottom();
+    isUserNearBottomRef.current = nearBottom;
+    setIsUserNearBottom(nearBottom);
+    setShowScrollButton(!nearBottom && Boolean(el && el.scrollHeight > el.clientHeight + 8));
+    if (nearBottom) setNewMessageCount(0);
+  }
+
+  function scrollToBottom(behavior = "smooth") {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior });
+    isUserNearBottomRef.current = true;
+    setIsUserNearBottom(true);
+    setShowScrollButton(false);
+    setNewMessageCount(0);
+  }
+
+  function handleMessagesScroll() {
+    syncScrollButtonState();
+    const el = messagesContainerRef.current;
+    if (!el || el.scrollTop > 96 || !hasOlderMessages || olderMessagesLoading || olderMessagesInFlightRef.current) return;
+
+    pendingOlderScrollRef.current = {
+      scrollHeight: el.scrollHeight,
+      scrollTop: el.scrollTop,
+    };
+    olderMessagesInFlightRef.current = true;
+    Promise.resolve(onLoadOlderMessages?.()).finally(() => {
+      olderMessagesInFlightRef.current = false;
+    });
+  }
+
   useLayoutEffect(() => {
-    const container = messagesContainerRef.current;
-    if (!container) return;
-    container.scrollTop = container.scrollHeight;
-  }, [messages, selectedUser]);
+    const selectedUserId = selectedUser?._id || "";
+    initialLoadUserRef.current = selectedUserId;
+    pendingOlderScrollRef.current = null;
+    olderMessagesInFlightRef.current = false;
+    isUserNearBottomRef.current = true;
+    setIsUserNearBottom(true);
+    setShowScrollButton(false);
+    setNewMessageCount(0);
+    previousMessagesRef.current = {
+      userId: selectedUserId,
+      length: messages.length,
+      lastId: messages.at(-1)?._id || "",
+    };
+
+    window.requestAnimationFrame(syncScrollButtonState);
+  }, [selectedUser?._id]);
+
+  useLayoutEffect(() => {
+    const pendingScroll = pendingOlderScrollRef.current;
+    const el = messagesContainerRef.current;
+    if (!pendingScroll || !el) return;
+
+    window.requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight - pendingScroll.scrollHeight + pendingScroll.scrollTop;
+      pendingOlderScrollRef.current = null;
+      syncScrollButtonState();
+    });
+  }, [messages.length]);
+
+  useLayoutEffect(() => {
+    const selectedUserId = selectedUser?._id || "";
+    const lastMessage = messages.at(-1);
+    const lastId = lastMessage?._id || "";
+    const previous = previousMessagesRef.current;
+    const sameConversation = previous.userId === selectedUserId;
+    const messageAdded = sameConversation && messages.length > previous.length && lastId !== previous.lastId;
+    const isInitialLoad = initialLoadUserRef.current === selectedUserId;
+
+    previousMessagesRef.current = { userId: selectedUserId, length: messages.length, lastId };
+
+    if (isInitialLoad) {
+      if (messages.length > 0) {
+        initialLoadUserRef.current = "";
+        window.requestAnimationFrame(() => scrollToBottom("auto"));
+        return;
+      }
+
+      if (!messagesLoading) {
+        initialLoadUserRef.current = "";
+      }
+      window.requestAnimationFrame(syncScrollButtonState);
+      return;
+    }
+
+    if (messageAdded && (lastMessage?.senderId === user._id || isUserNearBottomRef.current)) {
+      window.requestAnimationFrame(() => scrollToBottom("smooth"));
+      return;
+    }
+
+    if (messageAdded && lastMessage?.senderId !== user._id && !isUserNearBottomRef.current) {
+      setNewMessageCount((count) => count + 1);
+      setShowScrollButton(true);
+    }
+
+    window.requestAnimationFrame(syncScrollButtonState);
+  }, [messages, messagesLoading, selectedUser?._id, user?._id]);
 
   useEffect(() => {
     if (!openMenuId) return;
@@ -114,7 +243,7 @@ export default function ChatContainer({
     if (!activeSearchMessageId) return;
     const node = messageRefs.current.get(activeSearchMessageId);
     node?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [activeSearchMessageId]);
+  }, [activeSearchMessageId, searchJumpKey]);
 
   function formatMessageTime(value) {
     if (!value) return "";
@@ -176,6 +305,29 @@ export default function ChatContainer({
     onReplyMessage?.(message);
     setOpenMenuId("");
     window.setTimeout(() => textInputRef.current?.focus(), 0);
+  }
+
+  async function copyMessage(message) {
+    const copyText = message?.text || "";
+    if (!copyText.trim()) {
+      toast.error("Is message me copy karne layak text nahi hai.");
+      setOpenMenuId("");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(copyText);
+      toast.success("Message copied");
+    } catch {
+      toast.error("Message copy nahi ho paaya.");
+    } finally {
+      setOpenMenuId("");
+    }
+  }
+
+  function showPendingMessageAction(label) {
+    toast(`${label} option ready hai, full feature baad me connect kar sakte ho.`);
+    setOpenMenuId("");
   }
 
   function clearLongPressTimer() {
@@ -262,6 +414,15 @@ export default function ChatContainer({
     setOpenMenuId(message._id);
   }
 
+  function openContactPanel() {
+    if (typeof window !== "undefined" && window.innerWidth < 1024) {
+      onOpenMedia?.();
+      return;
+    }
+
+    onOpenSharedMedia?.();
+  }
+
   if (!selectedUser) {
     return (
       <main className={`grid h-full min-h-0 place-items-center overflow-hidden rounded-2xl p-5 ${isDark ? "border border-white/10 bg-black/10" : "border border-slate-300 bg-white/70"}`}>
@@ -274,9 +435,17 @@ export default function ChatContainer({
   }
 
   return (
-    <main className={`grid h-full min-h-0 grid-rows-[54px,minmax(0,1fr),auto] overflow-hidden rounded-2xl p-1 backdrop-blur-sm sm:grid-rows-[64px,minmax(0,1fr),auto] sm:p-3 ${isDark ? "border border-white/10 bg-black/15" : "border border-slate-300 bg-white/70"}`}>
+    <main className={`relative grid h-full min-h-0 grid-rows-[54px,minmax(0,1fr),auto] overflow-hidden rounded-2xl p-1 backdrop-blur-sm sm:grid-rows-[64px,minmax(0,1fr),auto] sm:p-3 ${isDark ? "border border-white/10 bg-black/15" : "border border-slate-300 bg-white/70"}`}>
       <header className={`flex h-[54px] items-center justify-between rounded-xl px-2.5 sm:h-[64px] sm:px-3 ${isDark ? "border border-white/10 bg-white/5" : "border border-slate-200 bg-white/80"}`}>
-        <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
+        <button
+          type="button"
+          onClick={openContactPanel}
+          className={`flex min-w-0 items-center gap-2.5 rounded-xl pr-2 text-left transition sm:gap-3 ${
+            isDark ? "hover:bg-white/5" : "hover:bg-slate-100/70"
+          }`}
+          aria-label="Open contact info"
+          title="Open contact info"
+        >
           <ProfileAvatar src={selectedUser.profilePic} name={selectedUser.fullName} className="h-8 w-8 shrink-0 rounded-full object-cover sm:h-9 sm:w-9" />
           <div className="min-w-0">
             <p className={`truncate text-sm font-semibold ${isDark ? "text-slate-100" : "text-slate-900"}`}>{selectedUser.fullName}</p>
@@ -293,13 +462,13 @@ export default function ChatContainer({
               {isTyping ? "Typing..." : selectedUser.isOnline ? "Online" : "Offline"}
             </p>
           </div>
-        </div>
+        </button>
         <button
           type="button"
-          onClick={onOpenSharedMedia}
+          onClick={openContactPanel}
           className="hidden min-w-0 flex-1 self-stretch lg:block"
-          aria-label="Open shared media"
-          title="Open shared media"
+          aria-label="Open contact info"
+          title="Open contact info"
         />
         <div className="flex shrink-0 items-center gap-1.5">
           <button
@@ -397,18 +566,22 @@ export default function ChatContainer({
 
       <div
         ref={messagesContainerRef}
+        onScroll={handleMessagesScroll}
         className={`chat-scroll min-h-0 overflow-x-hidden overflow-y-auto rounded-xl ${isDark ? "bg-black/20" : "bg-white/60"}`}
       >
         <div className="space-y-2 p-1.5 sm:p-3">
-        {messagesLoading && (
-          <div className="flex justify-center py-3">
-            <div
-              className={`rounded-full px-4 py-2 text-xs font-medium shadow-sm ${
-                isDark ? "bg-white/10 text-slate-300" : "bg-slate-100 text-slate-600"
-              }`}
-            >
-              Loading messages...
-            </div>
+        {olderMessagesLoading && (
+          <div className="flex justify-center py-1">
+            <span className={`rounded-full px-3 py-1 text-xs ${isDark ? "bg-white/10 text-slate-300" : "bg-slate-100 text-slate-500"}`}>
+              Loading older messages...
+            </span>
+          </div>
+        )}
+        {messagesLoading && messages.length === 0 && (
+          <div className="space-y-3 py-3" aria-label="Messages loading">
+            <div className={`h-10 w-36 animate-pulse rounded-2xl ${isDark ? "bg-white/10" : "bg-slate-200"}`} />
+            <div className={`ml-auto h-10 w-44 animate-pulse rounded-2xl ${isDark ? "bg-violet-500/25" : "bg-violet-100"}`} />
+            <div className={`h-10 w-28 animate-pulse rounded-2xl ${isDark ? "bg-white/10" : "bg-slate-200"}`} />
           </div>
         )}
         {messages.map((m) => {
@@ -493,8 +666,8 @@ export default function ChatContainer({
                       </div>
                       <div
                         onClick={(event) => event.stopPropagation()}
-                        className={`absolute top-[calc(100%+6px)] z-50 hidden overflow-hidden rounded-xl border py-1.5 text-sm shadow-2xl backdrop-blur-md sm:block ${
-                          isMine ? "right-0 w-44" : "left-0 w-36"
+                        className={`absolute bottom-[calc(100%+6px)] z-50 hidden max-h-[min(72vh,420px)] overflow-y-auto rounded-xl border py-1.5 text-sm shadow-2xl backdrop-blur-md sm:block ${
+                          isMine ? "right-0 w-56" : "left-0 w-56"
                         } ${isDark ? "border-white/10 bg-[#15151c] text-slate-100" : "border-slate-200 bg-white text-slate-800"}`}
                       >
                         <button
@@ -504,6 +677,30 @@ export default function ChatContainer({
                         >
                           <FiCornerUpLeft className="h-4 w-4 shrink-0" />
                           Reply
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => copyMessage(m)}
+                          className={`flex w-full items-center gap-3 whitespace-nowrap px-3.5 py-2.5 text-left font-medium ${isDark ? "hover:bg-white/10" : "hover:bg-slate-100"}`}
+                        >
+                          <FiCopy className="h-4 w-4 shrink-0" />
+                          Copy
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => showPendingMessageAction("Forward")}
+                          className={`flex w-full items-center gap-3 whitespace-nowrap px-3.5 py-2.5 text-left font-medium ${isDark ? "hover:bg-white/10" : "hover:bg-slate-100"}`}
+                        >
+                          <FiShare2 className="h-4 w-4 shrink-0" />
+                          Forward
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => showPendingMessageAction("Select")}
+                          className={`flex w-full items-center gap-3 whitespace-nowrap px-3.5 py-2.5 text-left font-medium ${isDark ? "hover:bg-white/10" : "hover:bg-slate-100"}`}
+                        >
+                          <FiCheckSquare className="h-4 w-4 shrink-0" />
+                          Select
                         </button>
                         {isMine && !m.pending && (
                           <button
@@ -589,6 +786,27 @@ export default function ChatContainer({
         })}
         </div>
       </div>
+
+      {showScrollButton && (
+        <button
+          type="button"
+          onClick={() => scrollToBottom("smooth")}
+          className={`absolute bottom-16 right-4 z-30 grid h-9 w-9 place-items-center rounded-full border shadow-xl transition hover:scale-105 sm:bottom-20 sm:right-6 ${
+            isDark
+              ? "border-white/10 bg-[#15151c]/95 text-slate-100 shadow-black/30 hover:bg-[#1f2030]"
+              : "border-slate-200 bg-white text-slate-700 shadow-slate-300/60 hover:bg-slate-50"
+          }`}
+          aria-label="Scroll to latest message"
+          title={newMessageCount > 0 ? `${newMessageCount} new message${newMessageCount === 1 ? "" : "s"}` : "Scroll to latest message"}
+        >
+          <FiChevronDown />
+          {newMessageCount > 0 && (
+            <span className="absolute -top-2 -right-2 grid min-h-5 min-w-5 place-items-center rounded-full bg-emerald-500 px-1 text-[10px] font-bold text-white shadow-lg shadow-emerald-950/30">
+              {newMessageCount > 9 ? "9+" : newMessageCount}
+            </span>
+          )}
+        </button>
+      )}
 
       <form onSubmit={onSend} className={`mt-1 shrink-0 rounded-xl p-1.5 sm:mt-2 sm:p-2 ${isDark ? "border border-white/10 bg-black/40" : "border border-slate-300 bg-white/90"}`}>
         {replyToMessage && (

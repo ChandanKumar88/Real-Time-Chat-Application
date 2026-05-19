@@ -13,6 +13,34 @@ const TYPING_STOP_DELAY_MS = 1200;
 const TYPING_STALE_MS = 4000;
 const TYPING_POLL_INTERVAL_MS = 1000;
 const TYPING_HTTP_THROTTLE_MS = 1500;
+const MESSAGES_CACHE_LIMIT_PER_CHAT = 80;
+const MESSAGES_PAGE_SIZE = 50;
+
+function sortMessagesByCreatedAt(nextMessages = []) {
+  return [...nextMessages].sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
+}
+
+function getMessagesCacheKey(userId) {
+  return `quickchat_messages_cache_${userId}`;
+}
+
+function pruneMessagesCache(cache) {
+  return Object.fromEntries(
+    Object.entries(cache || {}).map(([peerId, cachedMessages]) => [
+      peerId,
+      sortMessagesByCreatedAt(cachedMessages).slice(-MESSAGES_CACHE_LIMIT_PER_CHAT),
+    ])
+  );
+}
+
+function mergeMessagesById(currentMessages = [], incomingMessages = []) {
+  const messageMap = new Map();
+  [...currentMessages, ...incomingMessages].forEach((message) => {
+    if (!message?._id) return;
+    messageMap.set(message._id, { ...(messageMap.get(message._id) || {}), ...message });
+  });
+  return sortMessagesByCreatedAt([...messageMap.values()]);
+}
 
 export function ChatProvider({ children }) {
   const { user, setUser } = useAuth();
@@ -21,12 +49,14 @@ export function ChatProvider({ children }) {
   const [messages, setMessages] = useState([]);
   const [messagesCache, setMessagesCache] = useState({});
   const [messagesLoading, setMessagesLoading] = useState(false);
+  const [messagesPaging, setMessagesPaging] = useState({});
   const [socket, setSocket] = useState(null);
   const [socketConnected, setSocketConnected] = useState(false);
   const [typingUsers, setTypingUsers] = useState({});
   const selectedUserRef = useRef(null);
   const usersRef = useRef([]);
   const messagesCacheRef = useRef({});
+  const messagesPagingRef = useRef({});
   const onlineUserIdsRef = useRef(new Set());
   const typingStopTimersRef = useRef({});
   const typingStaleTimersRef = useRef({});
@@ -71,7 +101,7 @@ export function ChatProvider({ children }) {
     let nextMessages = [];
     setMessagesCache((prev) => {
       const currentMessages = prev[peerId] || [];
-      nextMessages = typeof updater === "function" ? updater(currentMessages) : updater;
+      nextMessages = sortMessagesByCreatedAt(typeof updater === "function" ? updater(currentMessages) : updater);
       const nextCache = { ...prev, [peerId]: nextMessages };
       messagesCacheRef.current = nextCache;
       return nextCache;
@@ -81,6 +111,30 @@ export function ChatProvider({ children }) {
       setMessages((prev) => (typeof updater === "function" ? updater(prev) : nextMessages));
     }
   }, []);
+
+  useEffect(() => {
+    if (!user?._id) return;
+
+    try {
+      const savedCache = sessionStorage.getItem(getMessagesCacheKey(user._id));
+      const nextCache = savedCache ? pruneMessagesCache(JSON.parse(savedCache)) : {};
+      messagesCacheRef.current = nextCache;
+      setMessagesCache(nextCache);
+    } catch {
+      messagesCacheRef.current = {};
+      setMessagesCache({});
+    }
+  }, [user?._id]);
+
+  useEffect(() => {
+    if (!user?._id) return;
+
+    try {
+      sessionStorage.setItem(getMessagesCacheKey(user._id), JSON.stringify(pruneMessagesCache(messagesCache)));
+    } catch {
+      // Cache is an enhancement only; chat should keep working if storage is full or unavailable.
+    }
+  }, [messagesCache, user?._id]);
 
   const removeMessageFromCache = useCallback((messageId) => {
     if (!messageId) return;
@@ -139,6 +193,10 @@ export function ChatProvider({ children }) {
   useEffect(() => {
     messagesCacheRef.current = messagesCache;
   }, [messagesCache]);
+
+  useEffect(() => {
+    messagesPagingRef.current = messagesPaging;
+  }, [messagesPaging]);
 
   useEffect(() => {
     if (!selectedUser) return;
@@ -278,13 +336,27 @@ export function ChatProvider({ children }) {
         const activeUserId = selectedUserRef.current?._id;
         if (!activeUserId) return;
 
-        const { data } = await api.get(`/messages/${activeUserId}`);
+        const { data } = await api.get(`/messages/${activeUserId}`, { params: { limit: MESSAGES_PAGE_SIZE } });
         const decryptedMessages = await decryptMessages(data.data || [], selectedUserRef.current);
         updateConversationMessages(activeUserId, (prev) => {
           const pendingMessages = prev.filter((message) => message.pending);
-          const nextMessages = [...decryptedMessages, ...pendingMessages];
+          const nextMessages = mergeMessagesById(prev, [...decryptedMessages, ...pendingMessages]);
           if (JSON.stringify(prev) === JSON.stringify(nextMessages)) return prev;
           return nextMessages;
+        });
+        setMessagesPaging((prev) => {
+          const current = prev[activeUserId] || {};
+          const oldestMessage = mergeMessagesById(messagesCacheRef.current[activeUserId] || [], decryptedMessages)[0];
+          const nextPaging = {
+            ...prev,
+            [activeUserId]: {
+              ...current,
+              hasMore: current.hasMore === false ? false : Boolean(data.pagination?.hasMore),
+              oldestCursor: oldestMessage?.createdAt || data.pagination?.nextBefore || current.oldestCursor || null,
+            },
+          };
+          messagesPagingRef.current = nextPaging;
+          return nextPaging;
         });
         setUsers((prev) => prev.map((u) => (u._id === activeUserId ? { ...u, unreadCount: 0 } : u)));
       } catch {
@@ -340,14 +412,32 @@ export function ChatProvider({ children }) {
     if (showLoader) setMessagesLoading(true);
 
     try {
-      const { data } = await api.get(`/messages/${userId}`, signal ? { signal } : undefined);
+      const { data } = await api.get(`/messages/${userId}`, {
+        ...(signal ? { signal } : {}),
+        params: { limit: MESSAGES_PAGE_SIZE },
+      });
       if (requestId && requestId !== messagesRequestIdRef.current) return [];
 
       const peerUser = requestedPeerUser || usersRef.current.find((u) => u._id === userId) || selectedUserRef.current;
-      const decryptedMessages = await decryptMessages(data.data, peerUser);
+      const decryptedMessages = await decryptMessages(data.data || [], peerUser);
       if (requestId && requestId !== messagesRequestIdRef.current) return [];
 
-      updateConversationMessages(userId, decryptedMessages);
+      updateConversationMessages(userId, (prev) => mergeMessagesById(prev, decryptedMessages));
+      setMessagesPaging((prev) => {
+        const current = prev[userId] || {};
+        const currentMessages = mergeMessagesById(messagesCacheRef.current[userId] || [], decryptedMessages);
+        const nextPaging = {
+          ...prev,
+          [userId]: {
+            ...current,
+            hasMore: current.hasMore === false ? false : Boolean(data.pagination?.hasMore),
+            oldestCursor: currentMessages[0]?.createdAt || data.pagination?.nextBefore || null,
+            loadingOlder: false,
+          },
+        };
+        messagesPagingRef.current = nextPaging;
+        return nextPaging;
+      });
       if (selectedUserRef.current?._id === userId) {
         setMessagesLoading(false);
       }
@@ -357,6 +447,59 @@ export function ChatProvider({ children }) {
       if (selectedUserRef.current?._id === userId) {
         setMessagesLoading(false);
       }
+      throw error;
+    }
+  }
+
+  async function loadOlderMessages(userId) {
+    if (!userId) return [];
+    const currentPaging = messagesPagingRef.current[userId] || {};
+    const currentMessages = messagesCacheRef.current[userId] || [];
+    const oldestCursor = currentPaging.oldestCursor || currentMessages[0]?.createdAt;
+
+    if (!oldestCursor || currentPaging.loadingOlder || currentPaging.hasMore === false) return [];
+
+    setMessagesPaging((prev) => {
+      const nextPaging = {
+        ...prev,
+        [userId]: { ...(prev[userId] || {}), loadingOlder: true },
+      };
+      messagesPagingRef.current = nextPaging;
+      return nextPaging;
+    });
+
+    try {
+      const { data } = await api.get(`/messages/${userId}`, {
+        params: { limit: MESSAGES_PAGE_SIZE, before: oldestCursor },
+      });
+      const peerUser = usersRef.current.find((u) => u._id === userId) || selectedUserRef.current;
+      const decryptedMessages = await decryptMessages(data.data || [], peerUser);
+
+      updateConversationMessages(userId, (prev) => mergeMessagesById(decryptedMessages, prev));
+      setMessagesPaging((prev) => {
+        const mergedMessages = mergeMessagesById(decryptedMessages, messagesCacheRef.current[userId] || []);
+        const nextPaging = {
+          ...prev,
+          [userId]: {
+            ...(prev[userId] || {}),
+            hasMore: Boolean(data.pagination?.hasMore),
+            oldestCursor: mergedMessages[0]?.createdAt || data.pagination?.nextBefore || null,
+            loadingOlder: false,
+          },
+        };
+        messagesPagingRef.current = nextPaging;
+        return nextPaging;
+      });
+      return decryptedMessages;
+    } catch (error) {
+      setMessagesPaging((prev) => {
+        const nextPaging = {
+          ...prev,
+          [userId]: { ...(prev[userId] || {}), loadingOlder: false },
+        };
+        messagesPagingRef.current = nextPaging;
+        return nextPaging;
+      });
       throw error;
     }
   }
@@ -385,6 +528,19 @@ export function ChatProvider({ children }) {
     setSelectedUser(nextUser);
     setMessages(cachedMessages || []);
     setMessagesLoading(!cachedMessages);
+    setMessagesPaging((prev) => {
+      const cachedOldest = cachedMessages?.[0]?.createdAt || null;
+      const nextPaging = {
+        ...prev,
+        [nextUser._id]: {
+          ...(prev[nextUser._id] || {}),
+          oldestCursor: cachedOldest || prev[nextUser._id]?.oldestCursor || null,
+          loadingOlder: false,
+        },
+      };
+      messagesPagingRef.current = nextPaging;
+      return nextPaging;
+    });
     setUsers((prev) => prev.map((u) => (u._id === nextUser._id ? { ...u, unreadCount: 0 } : u)));
 
     loadMessages(nextUser._id, {
@@ -491,7 +647,10 @@ export function ChatProvider({ children }) {
       loadUsers,
       loadMessages,
       messages,
+      messagesCache,
+      messagesPaging,
       messagesLoading,
+      loadOlderMessages,
       sendMessage,
       markSeen,
       deleteMessage,
@@ -503,7 +662,7 @@ export function ChatProvider({ children }) {
       stopTyping,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [users, selectedUser, messages, messagesLoading, socket, socketConnected, typingUsers]
+    [users, selectedUser, messages, messagesCache, messagesPaging, messagesLoading, socket, socketConnected, typingUsers]
   );
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;

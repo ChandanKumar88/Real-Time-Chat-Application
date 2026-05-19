@@ -7,19 +7,39 @@ const { getSocketIdsByUserId } = require("../socket/presenceStore");
 async function getConversation(req, res) {
   const { userId } = req.params;
   const myId = req.user.id;
+  const requestedLimit = Number.parseInt(req.query.limit, 10);
+  const limit = Math.min(Math.max(Number.isNaN(requestedLimit) ? 50 : requestedLimit, 1), 80);
+  const before = req.query.before ? new Date(req.query.before) : null;
 
   if (!userId || !mongoose.isValidObjectId(userId)) {
     return res.status(400).json({ success: false, message: "Invalid conversation user" });
   }
+  if (req.query.before && Number.isNaN(before.getTime())) {
+    return res.status(400).json({ success: false, message: "Invalid message cursor" });
+  }
 
-  const messages = await Message.find({
+  const conversationQuery = {
     $or: [
       { senderId: myId, receiverId: userId },
       { senderId: userId, receiverId: myId },
     ],
-  }).sort({ createdAt: 1 });
+  };
+  if (before) conversationQuery.createdAt = { $lt: before };
 
-  res.json({ success: true, data: messages });
+  const messages = await Message.find(conversationQuery)
+    .sort({ createdAt: -1 })
+    .limit(limit + 1);
+  const hasMore = messages.length > limit;
+  const pageMessages = messages.slice(0, limit).reverse();
+
+  res.json({
+    success: true,
+    data: pageMessages,
+    pagination: {
+      hasMore,
+      nextBefore: pageMessages[0]?.createdAt || null,
+    },
+  });
 }
 
 async function sendMessage(req, res) {

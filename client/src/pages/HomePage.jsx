@@ -57,7 +57,10 @@ export default function HomePage() {
     selectedUser,
     setSelectedUser,
     messages,
+    messagesCache,
+    messagesPaging,
     messagesLoading,
+    loadOlderMessages,
     sendMessage,
     markSeen,
     deleteMessage,
@@ -78,6 +81,7 @@ export default function HomePage() {
   const [activeDesktopTab, setActiveDesktopTab] = useState("chats");
   const [messageSearch, setMessageSearch] = useState("");
   const [activeSearchIndex, setActiveSearchIndex] = useState(0);
+  const [searchJumpKey, setSearchJumpKey] = useState(0);
   const [previewMedia, setPreviewMedia] = useState(null);
   const [previewZoom, setPreviewZoom] = useState(1);
   const [previewVideoRatio, setPreviewVideoRatio] = useState(null);
@@ -177,7 +181,32 @@ export default function HomePage() {
   }, [previewMedia]);
 
   const filteredUsers = useMemo(() => users, [users]);
+  const conversationPreviews = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(messagesCache || {}).map(([peerId, cachedMessages]) => {
+          const lastMessage = cachedMessages?.filter((message) => !message.pending).at(-1);
+          if (!lastMessage) return [peerId, null];
+
+          let previewText = "Message";
+          if (lastMessage.decryptionFailed) previewText = "Message can't be opened";
+          else if (lastMessage.text) previewText = lastMessage.text;
+          else if (lastMessage.image) previewText = "Photo";
+          else if (lastMessage.video) previewText = "Video";
+
+          return [
+            peerId,
+            {
+              text: lastMessage.senderId === user?._id ? `You: ${previewText}` : previewText,
+              createdAt: lastMessage.createdAt,
+            },
+          ];
+        })
+      ),
+    [messagesCache, user?._id]
+  );
   const isSelectedUserTyping = Boolean(selectedUser && typingUsers[selectedUser._id]);
+  const selectedMessagesPaging = selectedUser ? messagesPaging?.[selectedUser._id] || {} : {};
   const isCallOpen = callState.status !== "idle";
   const shouldShowFullCallScreen = isCallOpen && !isCallMinimized;
   const previewableMedia = useMemo(
@@ -211,11 +240,18 @@ export default function HomePage() {
     setIsSharedMediaOpen(false);
     setMessageSearch("");
     setActiveSearchIndex(0);
+    setSearchJumpKey((prev) => prev + 1);
   }, [selectedUser?._id]);
 
   useEffect(() => {
     setActiveSearchIndex(0);
+    setSearchJumpKey((prev) => prev + 1);
   }, [messageSearch]);
+
+  function jumpToSearchResult(index) {
+    setActiveSearchIndex(index);
+    setSearchJumpKey((prev) => prev + 1);
+  }
 
   useEffect(() => {
     if (activeSearchIndex >= messageSearchResults.length) {
@@ -889,9 +925,9 @@ export default function HomePage() {
   }
 
   return (
-    <div className={`min-h-[100dvh] p-0 md:grid md:min-h-screen md:place-items-center md:p-3 ${theme === "dark" ? "bg-black" : "bg-slate-100"}`}>
+    <div className={`min-h-[100dvh] overflow-hidden p-0 md:grid md:min-h-screen md:place-items-center md:p-3 ${theme === "dark" ? "bg-black" : "bg-slate-100"}`}>
       <div
-        className={`relative flex h-[100dvh] w-full max-w-6xl flex-col overflow-hidden p-2 md:h-[calc(100vh-24px)] md:rounded-2xl md:border md:p-2 lg:h-[92vh] lg:p-4 ${
+        className={`relative flex h-[100dvh] w-full max-w-6xl flex-col overflow-hidden p-2 md:h-[calc(100vh-24px)] md:rounded-2xl md:border md:p-2 lg:h-[calc(100vh-24px)] lg:p-4 ${
           theme === "dark" ? "bg-[#15151c] md:border-white/25" : "bg-white md:border-slate-300"
         }`}
         style={{
@@ -1109,6 +1145,7 @@ export default function HomePage() {
           theme={theme}
           toggleTheme={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
           callHistory={callHistory}
+          conversationPreviews={conversationPreviews}
           activeTab={activeDesktopTab}
           onTabChange={handleDesktopTabChange}
         />
@@ -1128,6 +1165,7 @@ export default function HomePage() {
           theme={theme}
           toggleTheme={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
           callHistory={callHistory}
+          conversationPreviews={conversationPreviews}
           isMobileOpen
           onCloseMobile={() => setIsSidebarOpen(false)}
         />
@@ -1238,6 +1276,9 @@ export default function HomePage() {
           selectedUser={selectedUser}
           messages={messages}
           messagesLoading={messagesLoading}
+          olderMessagesLoading={Boolean(selectedMessagesPaging.loadingOlder)}
+          hasOlderMessages={Boolean(selectedMessagesPaging.hasMore)}
+          onLoadOlderMessages={() => (selectedUser ? loadOlderMessages(selectedUser._id) : Promise.resolve([]))}
           text={text}
           setText={setText}
           onTextChange={(value) => {
@@ -1269,6 +1310,7 @@ export default function HomePage() {
           }}
           searchKeyword={messageSearch}
           activeSearchMessageId={activeSearchMessageId}
+          searchJumpKey={searchJumpKey}
           onPreviewMedia={openPreview}
           onReplyMessage={setReplyToMessage}
           onCancelReply={() => setReplyToMessage(null)}
@@ -1306,11 +1348,11 @@ export default function HomePage() {
 
       {activeDesktopTab === "chats" && isSearchOpen && selectedUser ? (
         <aside
-          className={`hidden h-full overflow-hidden rounded-3xl p-4 shadow-2xl backdrop-blur transition lg:fixed lg:bottom-3 lg:right-3 lg:top-3 lg:z-40 lg:block lg:w-[360px] lg:max-w-[calc(100vw-420px)] xl:static xl:col-span-3 xl:w-auto xl:max-w-none ${
+          className={`hidden h-full min-h-0 flex-col overflow-hidden rounded-3xl p-4 shadow-2xl backdrop-blur transition lg:fixed lg:bottom-3 lg:right-3 lg:top-3 lg:z-40 lg:flex lg:w-[360px] lg:max-w-[calc(100vw-420px)] xl:static xl:col-span-3 xl:w-auto xl:max-w-none ${
             theme === "dark" ? "border border-white/20 bg-[#11131a]/96" : "border border-slate-300 bg-white/95"
           }`}
         >
-          <div className="mb-4 flex items-center justify-between">
+          <div className="mb-4 flex shrink-0 items-center justify-between">
             <div>
               <h3 className={`text-base font-semibold ${theme === "dark" ? "text-slate-100" : "text-slate-900"}`}>Search messages</h3>
               <p className={`text-xs ${theme === "dark" ? "text-slate-400" : "text-slate-500"}`}>Only in current chat</p>
@@ -1324,7 +1366,7 @@ export default function HomePage() {
               <FiX />
             </button>
           </div>
-          <div className="relative mb-4">
+          <div className="relative mb-4 shrink-0">
             <FiSearch className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 ${theme === "dark" ? "text-slate-400" : "text-slate-500"}`} />
             <input
               value={messageSearch}
@@ -1337,7 +1379,7 @@ export default function HomePage() {
               }`}
             />
           </div>
-          <div className={`mb-3 flex items-center justify-between text-xs ${theme === "dark" ? "text-slate-400" : "text-slate-500"}`}>
+          <div className={`mb-3 flex shrink-0 items-center justify-between text-xs ${theme === "dark" ? "text-slate-400" : "text-slate-500"}`}>
             <span>{messageSearch.trim() ? `${messageSearchResults.length} result${messageSearchResults.length === 1 ? "" : "s"}` : "Type a keyword"}</span>
             {messageSearchResults.length > 0 && (
               <span>
@@ -1345,14 +1387,14 @@ export default function HomePage() {
               </span>
             )}
           </div>
-          <div className="chat-scroll max-h-[calc(100%-132px)] space-y-2 overflow-y-auto pr-1">
+          <div className="chat-scroll min-h-0 flex-1 space-y-2 overflow-x-hidden overflow-y-auto pr-1">
             {messageSearchResults.map((result, index) => {
               const isActive = index === activeSearchIndex;
               return (
                 <button
                   key={result._id}
                   type="button"
-                  onClick={() => setActiveSearchIndex(index)}
+                  onClick={() => jumpToSearchResult(index)}
                   className={`w-full rounded-xl border px-3 py-2 text-left transition ${
                     isActive
                       ? theme === "dark"

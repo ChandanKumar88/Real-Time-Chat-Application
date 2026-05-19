@@ -14,6 +14,7 @@ export default function Sidebar({
   theme,
   toggleTheme,
   callHistory = [],
+  conversationPreviews = {},
   isMobileOpen = false,
   onCloseMobile,
   activeTab,
@@ -24,6 +25,13 @@ export default function Sidebar({
   const [callSearch, setCallSearch] = useState("");
   const isDark = theme === "dark";
   const currentTab = isMobileOpen ? "chats" : activeTab || localActiveTab;
+
+  function formatPreviewTime(value) {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
 
   function handleTabChange(nextTab) {
     if (onTabChange) {
@@ -160,6 +168,7 @@ export default function Sidebar({
           <div className="chat-scroll min-h-0 flex-1 space-y-1 overflow-x-hidden overflow-y-auto pr-1">
             {filtered.map((u) => {
               const active = selectedUser?._id === u._id;
+              const preview = conversationPreviews[u._id];
               return (
                 <button
                   key={u._id}
@@ -177,13 +186,20 @@ export default function Sidebar({
                   <div className="flex items-center gap-3">
                     <ProfileAvatar src={u.profilePic} name={u.fullName} className="h-11 w-11 rounded-full object-cover" />
                     <div className="min-w-0 flex-1">
-                      <p className={`truncate text-sm font-semibold ${isDark ? "text-slate-100" : "text-slate-900"}`}>{u.fullName}</p>
+                      <div className="flex min-w-0 items-center justify-between gap-2">
+                        <p className={`truncate text-sm font-semibold ${isDark ? "text-slate-100" : "text-slate-900"}`}>{u.fullName}</p>
+                        {preview?.createdAt && (
+                          <span className={`shrink-0 text-[10px] ${isDark ? "text-slate-500" : "text-slate-400"}`}>
+                            {formatPreviewTime(preview.createdAt)}
+                          </span>
+                        )}
+                      </div>
                       <p
                         className={`truncate text-[11px] ${
-                          u.isOnline ? "text-emerald-500" : isDark ? "text-slate-400" : "text-slate-500"
+                          preview ? (isDark ? "text-slate-400" : "text-slate-500") : u.isOnline ? "text-emerald-500" : isDark ? "text-slate-400" : "text-slate-500"
                         }`}
                       >
-                        {u.isOnline ? "Online" : "Offline"}
+                        {preview?.text || (u.isOnline ? "Online" : "Offline")}
                       </p>
                     </div>
                     <div className="flex min-w-[42px] flex-col items-end justify-center gap-2">
