@@ -242,7 +242,7 @@ export default function RightSidebar({
               )}
               {!sharedMedia.length && (
                 <p className={`col-span-2 rounded-2xl px-3 py-6 text-center text-sm ${isDark ? "bg-white/5 text-slate-400" : "bg-slate-100 text-slate-500"}`}>
-                  Is chat me abhi koi shared media nahi hai.
+                  No shared media in this chat yet.
                 </p>
               )}
             </div>
@@ -268,7 +268,7 @@ export default function RightSidebar({
               ))}
               {!sharedLinks.length && (
                 <p className={`rounded-2xl px-3 py-6 text-center text-sm ${isDark ? "bg-white/5 text-slate-400" : "bg-slate-100 text-slate-500"}`}>
-                  Is chat me abhi koi shared link nahi hai.
+                  No shared links in this chat yet.
                 </p>
               )}
             </div>
