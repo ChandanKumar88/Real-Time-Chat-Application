@@ -64,6 +64,9 @@ export default function HomePage() {
     sendMessage,
     markSeen,
     deleteMessage,
+    clearConversation,
+    deleteConversation,
+    blockUser,
     typingUsers,
     emitTyping,
     stopTyping,
@@ -206,6 +209,32 @@ export default function HomePage() {
     [messagesCache, user?._id]
   );
   const isSelectedUserTyping = Boolean(selectedUser && typingUsers[selectedUser._id]);
+
+  async function handleForwardMessages({ messages: forwardMessages = [], users: targetUsers = [], note = "" }) {
+    const orderedMessages = [...forwardMessages].sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
+
+    for (const targetUser of targetUsers) {
+      for (const message of orderedMessages) {
+        const payload = {
+          text: message.decryptionFailed ? "" : message.text || "",
+          image: message.image || "",
+          video: message.video || "",
+          imageUrl: message.image || "",
+          videoUrl: message.video || "",
+          isForwarded: true,
+          forwardedFrom: message.senderId,
+          originalMessageId: message._id,
+        };
+
+        if (!payload.text && !payload.image && !payload.video && !payload.imageUrl && !payload.videoUrl) continue;
+        await sendMessage(targetUser._id, payload);
+      }
+
+      if (note.trim()) {
+        await sendMessage(targetUser._id, { text: note.trim() });
+      }
+    }
+  }
   const selectedMessagesPaging = selectedUser ? messagesPaging?.[selectedUser._id] || {} : {};
   const isCallOpen = callState.status !== "idle";
   const shouldShowFullCallScreen = isCallOpen && !isCallMinimized;
@@ -1303,7 +1332,7 @@ export default function HomePage() {
           }}
           onStartAudioCall={startAudioCall}
           onStartVideoCall={handleStartVideoCall}
-          isCallDisabled={callState.status !== "idle" || !selectedUser?.isOnline}
+          isCallDisabled={callState.status !== "idle" || !selectedUser?.isOnline || selectedUser?.isBlocked}
           onOpenSearchPanel={() => {
             setIsSharedMediaOpen(false);
             setIsSearchOpen(true);
@@ -1312,8 +1341,21 @@ export default function HomePage() {
           activeSearchMessageId={activeSearchMessageId}
           searchJumpKey={searchJumpKey}
           onPreviewMedia={openPreview}
+          forwardUsers={users}
+          onForwardMessages={handleForwardMessages}
           onReplyMessage={setReplyToMessage}
           onCancelReply={() => setReplyToMessage(null)}
+          onDeleteMessages={async (messageIds) => {
+            if (!messageIds?.length) return;
+            const confirmed = window.confirm(`Delete ${messageIds.length} selected message${messageIds.length === 1 ? "" : "s"}?`);
+            if (!confirmed) return;
+            try {
+              await Promise.all(messageIds.map((messageId) => deleteMessage(messageId)));
+            } catch (error) {
+              toast.error(error?.response?.data?.message || "Failed to delete selected messages");
+              throw error;
+            }
+          }}
           onDeleteMessage={async (messageId) => {
             const confirmed = window.confirm("Delete this message?");
             if (!confirmed) return;
@@ -1437,6 +1479,18 @@ export default function HomePage() {
                 toast.error(error?.response?.data?.message || "Failed to delete media");
               }
             }}
+            onClearChat={async () => {
+              await clearConversation(selectedUser._id);
+              toast.success("Chat cleared");
+            }}
+            onDeleteChat={async () => {
+              await deleteConversation(selectedUser._id);
+              toast.success("Chat deleted");
+            }}
+            onBlockUser={async (blocked) => {
+              await blockUser(selectedUser._id, blocked);
+              toast.success(blocked ? `${selectedUser.fullName} blocked` : `${selectedUser.fullName} unblocked`);
+            }}
             theme={theme}
             onCloseMobile={() => setIsSharedMediaOpen(false)}
           />
@@ -1457,6 +1511,18 @@ export default function HomePage() {
             } catch (error) {
               toast.error(error?.response?.data?.message || "Failed to delete media");
             }
+          }}
+          onClearChat={async () => {
+            await clearConversation(selectedUser._id);
+            toast.success("Chat cleared");
+          }}
+          onDeleteChat={async () => {
+            await deleteConversation(selectedUser._id);
+            toast.success("Chat deleted");
+          }}
+          onBlockUser={async (blocked) => {
+            await blockUser(selectedUser._id, blocked);
+            toast.success(blocked ? `${selectedUser.fullName} blocked` : `${selectedUser.fullName} unblocked`);
           }}
           theme={theme}
           mobile

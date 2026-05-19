@@ -19,6 +19,7 @@ async function getConversation(req, res) {
   }
 
   const conversationQuery = {
+    hiddenFor: { $ne: myId },
     $or: [
       { senderId: myId, receiverId: userId },
       { senderId: userId, receiverId: myId },
@@ -48,22 +49,34 @@ async function sendMessage(req, res) {
   const encryptedPayload = req.body.encryptedPayload?.trim?.() || "";
   const image = req.body.image || "";
   const video = req.body.video || "";
+  const forwardedImageUrl = req.body.imageUrl || "";
+  const forwardedVideoUrl = req.body.videoUrl || "";
   const replyTo = req.body.replyTo || null;
+  const isForwarded = Boolean(req.body.isForwarded);
+  const originalMessageId = req.body.originalMessageId || null;
 
-  if (!text && !encryptedPayload && !image && !video) {
+  if (!text && !encryptedPayload && !image && !video && !forwardedImageUrl && !forwardedVideoUrl) {
     return res.status(400).json({ success: false, message: "Message cannot be empty" });
   }
   if (replyTo && !mongoose.isValidObjectId(replyTo)) {
     return res.status(400).json({ success: false, message: "Invalid reply message" });
   }
+  if (originalMessageId && !mongoose.isValidObjectId(originalMessageId)) {
+    return res.status(400).json({ success: false, message: "Invalid original message" });
+  }
 
   const [sender, receiver] = await Promise.all([
-    User.findById(req.user.id).select("publicKey"),
-    User.findById(userId).select("publicKey"),
+    User.findById(req.user.id).select("publicKey blockedUsers"),
+    User.findById(userId).select("publicKey blockedUsers"),
   ]);
 
   if (!receiver) {
     return res.status(404).json({ success: false, message: "Receiver not found" });
+  }
+  const senderBlockedReceiver = sender?.blockedUsers?.some((id) => id.toString() === userId);
+  const receiverBlockedSender = receiver?.blockedUsers?.some((id) => id.toString() === req.user.id);
+  if (senderBlockedReceiver || receiverBlockedSender) {
+    return res.status(403).json({ success: false, message: "You cannot message this user" });
   }
 
   let replyMessageId = null;
@@ -82,16 +95,31 @@ async function sendMessage(req, res) {
     replyMessageId = replyMessage._id;
   }
 
-  let imageUrl = "";
-  if (image) {
+  let originalMessage = null;
+  if (originalMessageId) {
+    originalMessage = await Message.findOne({
+      _id: originalMessageId,
+      $or: [
+        { senderId: req.user.id },
+        { receiverId: req.user.id },
+      ],
+    }).select("_id senderId");
+
+    if (!originalMessage) {
+      return res.status(404).json({ success: false, message: "Original message not found" });
+    }
+  }
+
+  let imageUrl = forwardedImageUrl;
+  if (image && !imageUrl) {
     const uploaded = await cloudinary.uploader.upload(image, {
       folder: "chat-app/messages",
     });
     imageUrl = uploaded.secure_url;
   }
 
-  let videoUrl = "";
-  if (video) {
+  let videoUrl = forwardedVideoUrl;
+  if (video && !videoUrl) {
     const uploadedVideo = await cloudinary.uploader.upload(video, {
       folder: "chat-app/messages",
       resource_type: "video",
@@ -111,6 +139,9 @@ async function sendMessage(req, res) {
     receiverPublicKey: receiver?.publicKey || "",
     image: imageUrl,
     video: videoUrl,
+    isForwarded,
+    forwardedFrom: isForwarded ? originalMessage?.senderId || req.user.id : null,
+    originalMessageId: originalMessage?._id || null,
   });
 
   const io = req.app.get("io");
@@ -167,4 +198,48 @@ async function deleteMessage(req, res) {
   res.json({ success: true, message: "Message deleted", data: { messageId } });
 }
 
-module.exports = { getConversation, sendMessage, markSeen, deleteMessage };
+async function clearConversation(req, res) {
+  const { userId } = req.params;
+  if (!userId || !mongoose.isValidObjectId(userId)) {
+    return res.status(400).json({ success: false, message: "Invalid conversation user" });
+  }
+
+  await Message.deleteMany({
+    $or: [
+      { senderId: req.user.id, receiverId: userId },
+      { senderId: userId, receiverId: req.user.id },
+    ],
+  });
+
+  const io = req.app.get("io");
+  const receiverSocketIds = getSocketIdsByUserId(userId);
+  if (receiverSocketIds.length > 0) {
+    io.to(receiverSocketIds).emit("message:conversationDeleted", { userId: req.user.id });
+  }
+
+  res.json({ success: true, message: "Chat cleared", data: { userId } });
+}
+
+async function deleteConversation(req, res) {
+  const { userId } = req.params;
+  if (!userId || !mongoose.isValidObjectId(userId)) {
+    return res.status(400).json({ success: false, message: "Invalid conversation user" });
+  }
+
+  await Message.deleteMany({
+    $or: [
+      { senderId: req.user.id, receiverId: userId },
+      { senderId: userId, receiverId: req.user.id },
+    ],
+  });
+
+  const io = req.app.get("io");
+  const receiverSocketIds = getSocketIdsByUserId(userId);
+  if (receiverSocketIds.length > 0) {
+    io.to(receiverSocketIds).emit("message:conversationDeleted", { userId: req.user.id });
+  }
+
+  res.json({ success: true, message: "Chat deleted", data: { userId } });
+}
+
+module.exports = { getConversation, sendMessage, markSeen, deleteMessage, clearConversation, deleteConversation };

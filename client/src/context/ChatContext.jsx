@@ -280,6 +280,15 @@ export function ChatProvider({ children }) {
     s.on("message:deleted", ({ messageId }) => {
       removeMessageFromCache(messageId);
     });
+    s.on("message:conversationDeleted", ({ userId }) => {
+      if (!userId) return;
+      updateConversationMessages(userId, []);
+      setMessagesPaging((prev) => {
+        const nextPaging = { ...prev, [userId]: { hasMore: false, nextBefore: null, loadingOlder: false } };
+        messagesPagingRef.current = nextPaging;
+        return nextPaging;
+      });
+    });
     s.on("typing:update", ({ userId, isTyping }) => {
       if (!userId) return;
 
@@ -307,6 +316,7 @@ export function ChatProvider({ children }) {
       s.off("connect", handleConnect);
       s.off("disconnect", handleDisconnect);
       s.off("connect_error", handleDisconnect);
+      s.off("message:conversationDeleted");
       s.io.off("reconnect", announceOnline);
       Object.values(typingStopTimers).forEach(window.clearTimeout);
       Object.values(typingStaleTimers).forEach(window.clearTimeout);
@@ -560,6 +570,9 @@ export function ChatProvider({ children }) {
     }
 
     const targetUser = users.find((u) => u._id === targetUserId) || selectedUserRef.current;
+    if (targetUser?.isBlocked) {
+      throw new Error("You blocked this user. Unblock to send messages.");
+    }
     const localKeyPair = getLocalKeyPair(user._id);
     if (payload.text && user.publicKey && localKeyPair?.publicKey !== user.publicKey) {
       throw new Error("Encrypted chat key backup original browser se create karo.");
@@ -577,8 +590,11 @@ export function ChatProvider({ children }) {
       encryptionVersion: 0,
       senderPublicKey: user.publicKey || localKeyPair?.publicKey || "",
       receiverPublicKey: targetUser?.publicKey || "",
-      image: payload.image || "",
-      video: payload.video || "",
+      image: payload.image || payload.imageUrl || "",
+      video: payload.video || payload.videoUrl || "",
+      isForwarded: Boolean(payload.isForwarded),
+      forwardedFrom: payload.forwardedFrom || (payload.isForwarded ? user._id : null),
+      originalMessageId: payload.originalMessageId || null,
       seen: false,
       createdAt: new Date().toISOString(),
       pending: true,
@@ -593,7 +609,13 @@ export function ChatProvider({ children }) {
       const { data } = await api.post(`/messages/${targetUserId}`, { ...payload, text: "", encryptedPayload });
       const decryptedMessage = await decryptMessage(data.data, targetUser);
       updateConversationMessages(targetUserId, (prev) => {
-        const confirmedMessage = { ...decryptedMessage, text: payload.text || decryptedMessage.text };
+        const confirmedMessage = {
+          ...decryptedMessage,
+          text: payload.text || decryptedMessage.text,
+          isForwarded: Boolean(payload.isForwarded || decryptedMessage.isForwarded),
+          forwardedFrom: payload.forwardedFrom || decryptedMessage.forwardedFrom || (payload.isForwarded ? user._id : null),
+          originalMessageId: payload.originalMessageId || decryptedMessage.originalMessageId || null,
+        };
         const withoutTempOrDuplicate = prev.filter((m) => m._id !== tempId && m._id !== confirmedMessage._id);
         return [...withoutTempOrDuplicate, confirmedMessage].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
       });
@@ -611,6 +633,43 @@ export function ChatProvider({ children }) {
   async function deleteMessage(messageId) {
     await api.delete(`/messages/${messageId}`);
     removeMessageFromCache(messageId);
+  }
+
+  async function clearConversation(userId) {
+    if (!userId) return;
+    try {
+      await api.patch(`/messages/conversation/${userId}/clear`);
+    } catch (error) {
+      if (error?.response?.status !== 404) throw error;
+      await api.delete(`/messages/conversation/${userId}`);
+    }
+    updateConversationMessages(userId, []);
+    setMessagesPaging((prev) => {
+      const nextPaging = { ...prev, [userId]: { hasMore: false, nextBefore: null, loadingOlder: false } };
+      messagesPagingRef.current = nextPaging;
+      return nextPaging;
+    });
+    setUsers((prev) => prev.map((u) => (u._id === userId ? { ...u, unreadCount: 0 } : u)));
+  }
+
+  async function deleteConversation(userId) {
+    if (!userId) return;
+    await api.delete(`/messages/conversation/${userId}`);
+    updateConversationMessages(userId, []);
+    setMessagesPaging((prev) => {
+      const nextPaging = { ...prev, [userId]: { hasMore: false, nextBefore: null, loadingOlder: false } };
+      messagesPagingRef.current = nextPaging;
+      return nextPaging;
+    });
+    setUsers((prev) => prev.map((u) => (u._id === userId ? { ...u, unreadCount: 0 } : u)));
+  }
+
+  async function blockUser(userId, blocked = true) {
+    if (!userId) return;
+    const { data } = await api.patch(`/users/${userId}/block`, { blocked });
+    const isBlocked = Boolean(data.data?.isBlocked ?? blocked);
+    setUsers((prev) => prev.map((u) => (u._id === userId ? { ...u, isBlocked } : u)));
+    setSelectedUser((prev) => (prev?._id === userId ? { ...prev, isBlocked } : prev));
   }
 
   function emitTyping(receiverId) {
@@ -654,6 +713,9 @@ export function ChatProvider({ children }) {
       sendMessage,
       markSeen,
       deleteMessage,
+      clearConversation,
+      deleteConversation,
+      blockUser,
       socket,
       socketConnected,
       setUsers,

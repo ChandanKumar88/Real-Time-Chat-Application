@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { FiFile, FiImage, FiLink, FiTrash2, FiUser, FiX } from "react-icons/fi";
+import toast from "react-hot-toast";
+import { FiImage, FiLink, FiMinusCircle, FiSlash, FiTrash2, FiUser, FiX } from "react-icons/fi";
 import ProfileAvatar from "./ProfileAvatar";
 
 export default function RightSidebar({
@@ -7,6 +8,9 @@ export default function RightSidebar({
   messages,
   currentUserId,
   onDeleteMessage,
+  onClearChat,
+  onDeleteChat,
+  onBlockUser,
   onPreviewMedia,
   theme = "dark",
   mobile = false,
@@ -14,6 +18,9 @@ export default function RightSidebar({
 }) {
   const isDark = theme === "dark";
   const [activeSection, setActiveSection] = useState("contact");
+  const [confirmAction, setConfirmAction] = useState("");
+  const [reportOnBlock, setReportOnBlock] = useState(false);
+  const [actionBusy, setActionBusy] = useState(false);
   const sharedMedia = messages.filter((m) => m.image || m.video);
   const sharedLinks = useMemo(() => {
     const linkPattern = /(https?:\/\/[^\s]+|www\.[^\s]+)/gi;
@@ -27,13 +34,10 @@ export default function RightSidebar({
       }));
     });
   }, [messages]);
-  const sharedFiles = messages.filter((message) => message.file || message.document || message.audio);
-
   const sections = [
     { id: "contact", label: "Info", icon: FiUser },
     { id: "media", label: "Media", icon: FiImage },
     { id: "links", label: "Links", icon: FiLink },
-    { id: "files", label: "Files", icon: FiFile },
   ];
 
   function formatPanelTime(value) {
@@ -46,8 +50,42 @@ export default function RightSidebar({
   function getPanelTitle() {
     if (activeSection === "contact") return "Contact info";
     if (activeSection === "links") return "Links";
-    if (activeSection === "files") return "Files";
     return "Shared media";
+  }
+
+  function closeDialog() {
+    if (actionBusy) return;
+    setConfirmAction("");
+    setReportOnBlock(false);
+  }
+
+  async function confirmPanelAction() {
+    if (!confirmAction || actionBusy) return;
+    setActionBusy(true);
+    try {
+      if (confirmAction === "clear") await onClearChat?.();
+      if (confirmAction === "delete") await onDeleteChat?.();
+      if (confirmAction === "block") await onBlockUser?.(!selectedUser?.isBlocked, { report: reportOnBlock });
+      setConfirmAction("");
+      setReportOnBlock(false);
+    } catch (error) {
+      toast.error(error?.response?.data?.message || error?.message || "Action failed");
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  function getDialogTitle() {
+    if (confirmAction === "clear") return "Clear this chat?";
+    if (confirmAction === "delete") return `Delete chat with ${selectedUser.fullName}?`;
+    if (selectedUser.isBlocked) return `Unblock ${selectedUser.fullName}?`;
+    return `Block ${selectedUser.fullName}?`;
+  }
+
+  function getDialogButtonLabel() {
+    if (confirmAction === "clear") return "Clear chat";
+    if (confirmAction === "delete") return "Delete";
+    return selectedUser?.isBlocked ? "Unblock" : "Block";
   }
 
   return (
@@ -77,7 +115,7 @@ export default function RightSidebar({
             )}
           </div>
 
-          <div className={`mb-4 grid shrink-0 grid-cols-4 rounded-2xl p-1 ${isDark ? "bg-white/5" : "bg-slate-100"}`}>
+          <div className={`mb-4 grid shrink-0 grid-cols-3 rounded-2xl p-1 ${isDark ? "bg-white/5" : "bg-slate-100"}`}>
             {sections.map((section) => {
               const Icon = section.icon;
               const active = activeSection === section.id;
@@ -118,6 +156,39 @@ export default function RightSidebar({
               <div className={`mt-5 rounded-2xl px-3 py-4 text-sm ${isDark ? "bg-white/5 text-slate-300" : "bg-slate-100 text-slate-600"}`}>
                 <p className={`mb-1 text-xs font-semibold uppercase tracking-wide ${isDark ? "text-slate-500" : "text-slate-500"}`}>About</p>
                 <p>{selectedUser.bio || "No bio available."}</p>
+              </div>
+
+              <div className={`mt-6 border-t pt-4 ${isDark ? "border-white/10" : "border-slate-200"}`}>
+                <button
+                  type="button"
+                  onClick={() => setConfirmAction("clear")}
+                  className={`flex w-full items-center gap-4 rounded-2xl px-3 py-3 text-left text-sm font-semibold transition ${
+                    isDark ? "text-rose-300 hover:bg-rose-500/10" : "text-rose-600 hover:bg-rose-50"
+                  }`}
+                >
+                  <FiMinusCircle className="h-5 w-5 shrink-0" />
+                  <span>Clear chat</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmAction("block")}
+                  className={`flex w-full items-center gap-4 rounded-2xl px-3 py-3 text-left text-sm font-semibold transition ${
+                    isDark ? "text-rose-300 hover:bg-rose-500/10" : "text-rose-600 hover:bg-rose-50"
+                  }`}
+                >
+                  <FiSlash className="h-5 w-5 shrink-0" />
+                  <span>{selectedUser.isBlocked ? "Unblock" : "Block"}<br className="sm:hidden" /> {selectedUser.fullName}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmAction("delete")}
+                  className={`flex w-full items-center gap-4 rounded-2xl px-3 py-3 text-left text-sm font-semibold transition ${
+                    isDark ? "text-rose-300 hover:bg-rose-500/10" : "text-rose-600 hover:bg-rose-50"
+                  }`}
+                >
+                  <FiTrash2 className="h-5 w-5 shrink-0" />
+                  <span>Delete chat</span>
+                </button>
               </div>
             </div>
           )}
@@ -203,28 +274,74 @@ export default function RightSidebar({
             </div>
           )}
 
-          {activeSection === "files" && (
-            <div className="chat-scroll min-h-0 flex-1 space-y-2 overflow-x-hidden overflow-y-auto pr-1">
-              {sharedFiles.map((fileMessage) => (
-                <div
-                  key={fileMessage._id}
-                  className={`flex items-center gap-3 rounded-2xl px-3 py-3 text-sm ${isDark ? "bg-white/5 text-slate-300" : "bg-slate-100 text-slate-600"}`}
-                >
-                  <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${isDark ? "bg-white/10" : "bg-white"}`}>
-                    <FiFile />
-                  </span>
-                  <span className="min-w-0 flex-1 truncate">{fileMessage.file?.name || fileMessage.document?.name || "Shared file"}</span>
-                </div>
-              ))}
-              {!sharedFiles.length && (
-                <p className={`rounded-2xl px-3 py-6 text-center text-sm ${isDark ? "bg-white/5 text-slate-400" : "bg-slate-100 text-slate-500"}`}>
-                  Is chat me abhi koi shared file nahi hai.
-                </p>
-              )}
-            </div>
-          )}
         </>
       )}
+
+      {confirmAction && selectedUser ? (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm">
+          <div
+            className={`w-full max-w-xl rounded-3xl p-6 shadow-2xl ${
+              isDark ? "border border-white/10 bg-[#202020] text-slate-100" : "border border-slate-200 bg-white text-slate-900"
+            }`}
+          >
+            <h3 className="text-xl font-semibold">{getDialogTitle()}</h3>
+            {confirmAction === "clear" && (
+              <p className={`mt-6 text-sm font-medium ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                All messages from this chat will be deleted.
+              </p>
+            )}
+            {confirmAction === "delete" && (
+              <p className={`mt-6 text-sm font-medium ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                Messages will be removed from all devices.
+              </p>
+            )}
+            {confirmAction === "block" && !selectedUser.isBlocked && (
+              <div className="mt-6 space-y-4">
+                <p className={`text-sm font-medium ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                  This person won't be able to message or call you. They won't know you blocked or reported them.
+                </p>
+                <label className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    checked={reportOnBlock}
+                    onChange={(event) => setReportOnBlock(event.target.checked)}
+                    className="mt-1 h-5 w-5 rounded border-slate-500 bg-transparent"
+                  />
+                  <span className="text-sm">
+                    <span className="block font-semibold">Report to QuickChat</span>
+                    <span className={isDark ? "text-slate-400" : "text-slate-500"}>
+                      The last 5 messages from this user will be marked for review.
+                    </span>
+                  </span>
+                </label>
+              </div>
+            )}
+            {confirmAction === "block" && selectedUser.isBlocked && (
+              <p className={`mt-6 text-sm font-medium ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                This person will be able to message and call you again.
+              </p>
+            )}
+            <div className="mt-12 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={closeDialog}
+                disabled={actionBusy}
+                className="rounded-full px-5 py-3 text-sm font-bold text-emerald-400 transition hover:bg-emerald-500/10 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmPanelAction}
+                disabled={actionBusy}
+                className="rounded-full bg-rose-500 px-7 py-3 text-sm font-bold text-black transition hover:bg-rose-400 disabled:opacity-50"
+              >
+                {actionBusy ? "Please wait..." : getDialogButtonLabel()}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </aside>
   );
 }

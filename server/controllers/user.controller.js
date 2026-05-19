@@ -13,12 +13,20 @@ function isRecentlyOnline(user) {
 }
 
 async function listUsers(req, res) {
+  const currentUser = await User.findById(req.user.id).select("blockedUsers");
+  const blockedIds = new Set((currentUser?.blockedUsers || []).map((id) => id.toString()));
   const users = await User.find({ _id: { $ne: req.user.id } })
     .select("-password -encryptionKeyBackup")
     .sort({ isOnline: -1, fullName: 1 });
   const onlineIds = new Set(getOnlineUserIds());
   const unreadAgg = await Message.aggregate([
-    { $match: { receiverId: new mongoose.Types.ObjectId(req.user.id), seen: false } },
+    {
+      $match: {
+        receiverId: new mongoose.Types.ObjectId(req.user.id),
+        seen: false,
+        hiddenFor: { $ne: new mongoose.Types.ObjectId(req.user.id) },
+      },
+    },
     { $group: { _id: "$senderId", count: { $sum: 1 } } },
   ]);
   const unreadMap = new Map(unreadAgg.map((item) => [item._id.toString(), item.count]));
@@ -30,6 +38,7 @@ async function listUsers(req, res) {
       return {
         ...userObject,
         isOnline: onlineIds.has(userId) || isRecentlyOnline(userObject),
+        isBlocked: blockedIds.has(userId),
         unreadCount: unreadMap.get(userId) || 0,
       };
     })
@@ -40,6 +49,8 @@ async function listUsers(req, res) {
 async function searchUsers(req, res) {
   const q = (req.query.q || "").trim();
   const regex = new RegExp(q, "i");
+  const currentUser = await User.findById(req.user.id).select("blockedUsers");
+  const blockedIds = new Set((currentUser?.blockedUsers || []).map((id) => id.toString()));
   const users = await User.find({
     _id: { $ne: req.user.id },
     $or: [{ fullName: regex }, { email: regex }],
@@ -51,7 +62,12 @@ async function searchUsers(req, res) {
     success: true,
     data: users.map((u) => {
       const userObject = u.toObject();
-      return { ...userObject, isOnline: onlineIds.has(u._id.toString()) || isRecentlyOnline(userObject) };
+      const userId = u._id.toString();
+      return {
+        ...userObject,
+        isOnline: onlineIds.has(userId) || isRecentlyOnline(userObject),
+        isBlocked: blockedIds.has(userId),
+      };
     }),
   });
 }
@@ -171,6 +187,25 @@ async function deleteAccount(req, res) {
   res.json({ success: true, message: "Account deleted successfully" });
 }
 
+async function updateBlockedUser(req, res) {
+  const { userId } = req.params;
+  const blocked = req.body.blocked !== false;
+
+  if (!userId || !mongoose.isValidObjectId(userId) || userId === req.user.id) {
+    return res.status(400).json({ success: false, message: "Invalid user" });
+  }
+
+  const targetUser = await User.findById(userId).select("_id");
+  if (!targetUser) {
+    return res.status(404).json({ success: false, message: "User not found" });
+  }
+
+  const update = blocked ? { $addToSet: { blockedUsers: userId } } : { $pull: { blockedUsers: userId } };
+  await User.findByIdAndUpdate(req.user.id, update);
+
+  res.json({ success: true, message: blocked ? "User blocked" : "User unblocked", data: { userId, isBlocked: blocked } });
+}
+
 module.exports = {
   listUsers,
   searchUsers,
@@ -180,4 +215,5 @@ module.exports = {
   getTypingStatus,
   updateProfile,
   deleteAccount,
+  updateBlockedUser,
 };

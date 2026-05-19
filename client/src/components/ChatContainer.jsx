@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import {
   FiCheckSquare,
@@ -42,6 +42,7 @@ export default function ChatContainer({
   isTyping = false,
   onSend,
   onDeleteMessage,
+  onDeleteMessages,
   onReplyMessage,
   onCancelReply,
   onStartAudioCall,
@@ -54,15 +55,17 @@ export default function ChatContainer({
   activeSearchMessageId = "",
   searchJumpKey = 0,
   onPreviewMedia,
+  forwardUsers = [],
+  onForwardMessages,
   theme = "dark",
 }) {
   const imageInputRef = useRef(null);
   const textInputRef = useRef(null);
   const messagesContainerRef = useRef(null);
   const messageRefs = useRef(new Map());
-  const callMenuRef = useRef(null);
   const longPressTimerRef = useRef(null);
   const longPressStateRef = useRef(null);
+  const forwardSearchInputRef = useRef(null);
   const ignoreNextDocumentClickRef = useRef(false);
   const isUserNearBottomRef = useRef(true);
   const initialLoadUserRef = useRef("");
@@ -71,12 +74,39 @@ export default function ChatContainer({
   const pendingOlderScrollRef = useRef(null);
   const [mediaError, setMediaError] = useState("");
   const [openMenuId, setOpenMenuId] = useState("");
-  const [isCallMenuOpen, setIsCallMenuOpen] = useState(false);
   const [swipeState, setSwipeState] = useState(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [isUserNearBottom, setIsUserNearBottom] = useState(true);
   const [newMessageCount, setNewMessageCount] = useState(0);
+  const [isForwardMode, setIsForwardMode] = useState(false);
+  const [selectedForwardMessageIds, setSelectedForwardMessageIds] = useState([]);
+  const [isForwardModalOpen, setIsForwardModalOpen] = useState(false);
+  const [forwardSearch, setForwardSearch] = useState("");
+  const [selectedForwardUserIds, setSelectedForwardUserIds] = useState([]);
+  const [forwardNote, setForwardNote] = useState("");
+  const [isForwardSending, setIsForwardSending] = useState(false);
   const isDark = theme === "dark";
+
+  const selectedForwardMessages = useMemo(
+    () => selectedForwardMessageIds.map((messageId) => messages.find((message) => message._id === messageId)).filter(Boolean),
+    [messages, selectedForwardMessageIds]
+  );
+  const filteredForwardUsers = useMemo(() => {
+    const keyword = forwardSearch.trim().toLowerCase();
+    return (forwardUsers || []).filter((item) => {
+      if (!item?._id || item._id === user?._id) return false;
+      if (!keyword) return true;
+      return (item.fullName || "").toLowerCase().includes(keyword);
+    });
+  }, [forwardSearch, forwardUsers, user?._id]);
+  const selectedForwardUsers = useMemo(
+    () => selectedForwardUserIds.map((userId) => (forwardUsers || []).find((item) => item._id === userId)).filter(Boolean),
+    [forwardUsers, selectedForwardUserIds]
+  );
+  const selectedForwardOwnMessages = useMemo(
+    () => selectedForwardMessages.filter((message) => message.senderId === user?._id && !message.pending),
+    [selectedForwardMessages, user?._id]
+  );
 
   function getIsNearBottom() {
     const el = messagesContainerRef.current;
@@ -212,32 +242,34 @@ export default function ChatContainer({
     };
   }, [openMenuId]);
 
+  useEffect(() => {
+    if (!isForwardMode && !isForwardModalOpen) return;
+
+    function handleForwardKeyDown(event) {
+      if (event.key === "Escape") {
+        if (isForwardModalOpen) {
+          setIsForwardModalOpen(false);
+          return;
+        }
+        closeForwardMode();
+      }
+
+      if (event.key === "Enter" && isForwardModalOpen && selectedForwardUserIds.length > 0) {
+        event.preventDefault();
+        sendForwardedMessages();
+      }
+    }
+
+    document.addEventListener("keydown", handleForwardKeyDown);
+    return () => document.removeEventListener("keydown", handleForwardKeyDown);
+  }, [isForwardMode, isForwardModalOpen, selectedForwardUserIds, selectedForwardMessages, selectedForwardUsers, forwardNote]);
+
   useEffect(
     () => () => {
       window.clearTimeout(longPressTimerRef.current);
     },
     []
   );
-
-  useEffect(() => {
-    if (!isCallMenuOpen) return;
-
-    function closeCallMenu(event) {
-      if (callMenuRef.current?.contains(event.target)) return;
-      setIsCallMenuOpen(false);
-    }
-
-    function handleKeyDown(event) {
-      if (event.key === "Escape") setIsCallMenuOpen(false);
-    }
-
-    document.addEventListener("click", closeCallMenu);
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("click", closeCallMenu);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [isCallMenuOpen]);
 
   useEffect(() => {
     if (!activeSearchMessageId) return;
@@ -307,27 +339,214 @@ export default function ChatContainer({
     window.setTimeout(() => textInputRef.current?.focus(), 0);
   }
 
-  async function copyMessage(message) {
-    const copyText = message?.text || "";
-    if (!copyText.trim()) {
-      toast.error("Is message me copy karne layak text nahi hai.");
-      setOpenMenuId("");
+  function getImageFileName(src) {
+    if (!src) return "QuickChat image";
+    try {
+      const pathname = new URL(src).pathname;
+      const fileName = decodeURIComponent(pathname.split("/").filter(Boolean).at(-1) || "");
+      return fileName || "QuickChat image";
+    } catch {
+      return "QuickChat image";
+    }
+  }
+
+  async function getClipboardImageBlob(src) {
+    const response = await fetch(src);
+    const sourceBlob = await response.blob();
+    if (sourceBlob.type === "image/png") return sourceBlob;
+
+    const bitmap = await createImageBitmap(sourceBlob);
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const context = canvas.getContext("2d");
+    context.drawImage(bitmap, 0, 0);
+    bitmap.close?.();
+
+    return new Promise((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error("Unable to prepare image for clipboard"));
+      }, "image/png");
+    });
+  }
+
+  async function copyImageMessage(message) {
+    if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") {
+      await navigator.clipboard.writeText(message.image);
+      toast.success("Image link copied");
       return;
     }
 
+    const imageBlob = await getClipboardImageBlob(message.image);
+    await navigator.clipboard.write([new ClipboardItem({ [imageBlob.type || "image/png"]: imageBlob })]);
+    toast.success(`File copied: ${getImageFileName(message.image)}`);
+  }
+
+  async function copyMessage(message) {
+    const copyText = message?.text || "";
+
     try {
-      await navigator.clipboard.writeText(copyText);
-      toast.success("Message copied");
+      if (message?.image) {
+        await copyImageMessage(message);
+      } else if (copyText.trim()) {
+        await navigator.clipboard.writeText(copyText);
+        toast.success("Message copied");
+      } else if (message?.video) {
+        await navigator.clipboard.writeText(message.video);
+        toast.success("Video link copied");
+      } else {
+        toast.error("Is message me copy karne layak content nahi hai.");
+      }
     } catch {
-      toast.error("Message copy nahi ho paaya.");
+      toast.error(message?.image ? "Image copy nahi ho paayi." : "Message copy nahi ho paaya.");
     } finally {
       setOpenMenuId("");
     }
   }
 
-  function showPendingMessageAction(label) {
-    toast(`${label} option ready hai, full feature baad me connect kar sakte ho.`);
+  async function copySelectedMessages() {
+    if (selectedForwardMessages.length === 0) {
+      toast.error("Copy karne ke liye message select karo.");
+      return;
+    }
+
+    if (selectedForwardMessages.length === 1) {
+      await copyMessage(selectedForwardMessages[0]);
+      return;
+    }
+
+    const copyValue = [...selectedForwardMessages]
+      .sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0))
+      .map((message) => {
+        if (message.decryptionFailed) return "";
+        if (message.text) return message.text;
+        if (message.image) return message.image;
+        if (message.video) return message.video;
+        return "";
+      })
+      .filter(Boolean)
+      .join("\n");
+
+    if (!copyValue.trim()) {
+      toast.error("Selected messages me copy karne layak content nahi hai.");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(copyValue);
+      toast.success(`${selectedForwardMessages.length} selected messages copied`);
+    } catch {
+      toast.error("Selected messages copy nahi ho paaye.");
+    }
+  }
+
+  function startForwardMode(message) {
+    if (!message?._id) return;
     setOpenMenuId("");
+    setIsForwardMode(true);
+    setSelectedForwardMessageIds([message._id]);
+    setIsForwardModalOpen(false);
+    setSelectedForwardUserIds([]);
+    setForwardSearch("");
+    setForwardNote("");
+  }
+
+  function closeForwardMode() {
+    setIsForwardMode(false);
+    setSelectedForwardMessageIds([]);
+    setIsForwardModalOpen(false);
+    setSelectedForwardUserIds([]);
+    setForwardSearch("");
+    setForwardNote("");
+    setIsForwardSending(false);
+  }
+
+  function toggleForwardMessage(messageId) {
+    if (!messageId) return;
+    setSelectedForwardMessageIds((prev) => {
+      if (prev.includes(messageId)) return prev.filter((id) => id !== messageId);
+      return [...prev, messageId];
+    });
+  }
+
+  function toggleForwardUser(userId) {
+    if (!userId) return;
+    setSelectedForwardUserIds((prev) => {
+      if (prev.includes(userId)) return prev.filter((id) => id !== userId);
+      return [...prev, userId];
+    });
+  }
+
+  function openForwardModal() {
+    if (selectedForwardMessages.length === 0) {
+      toast.error("Forward karne ke liye message select karo.");
+      return;
+    }
+    setIsForwardModalOpen(true);
+    window.setTimeout(() => forwardSearchInputRef.current?.focus(), 60);
+  }
+
+  async function sendForwardedMessages() {
+    if (!onForwardMessages) return;
+    if (selectedForwardMessages.length === 0) {
+      toast.error("Forward karne ke liye message select karo.");
+      return;
+    }
+    if (selectedForwardUsers.length === 0) {
+      toast.error("Forward karne ke liye user select karo.");
+      return;
+    }
+
+    setIsForwardSending(true);
+    try {
+      await onForwardMessages({
+        messages: selectedForwardMessages,
+        users: selectedForwardUsers,
+        note: forwardNote.trim(),
+      });
+      toast.success(`Forwarded to ${selectedForwardUsers.length} chat${selectedForwardUsers.length === 1 ? "" : "s"}`);
+      closeForwardMode();
+    } catch (error) {
+      toast.error(error?.response?.data?.message || error?.message || "Forward failed");
+      setIsForwardSending(false);
+    }
+  }
+
+  async function deleteSelectedMessages() {
+    if (selectedForwardMessages.length === 0) {
+      toast.error("Delete karne ke liye message select karo.");
+      return;
+    }
+
+    if (selectedForwardOwnMessages.length === 0) {
+      toast.error("Sirf apne sent messages delete ho sakte hain.");
+      return;
+    }
+
+    try {
+      if (onDeleteMessages) {
+        await onDeleteMessages(selectedForwardOwnMessages.map((message) => message._id));
+      } else {
+        for (const message of selectedForwardOwnMessages) {
+          await onDeleteMessage?.(message._id);
+        }
+      }
+      const deletedIds = new Set(selectedForwardOwnMessages.map((message) => message._id));
+      setSelectedForwardMessageIds((prev) => prev.filter((id) => !deletedIds.has(id)));
+      if (selectedForwardOwnMessages.length === selectedForwardMessages.length) closeForwardMode();
+    } catch (error) {
+      toast.error(error?.response?.data?.message || error?.message || "Selected messages delete nahi ho paaye.");
+    }
+  }
+
+  function getForwardPreview(message) {
+    if (!message) return "Message";
+    if (message.decryptionFailed) return "Locked message";
+    if (message.text) return message.text;
+    if (message.image) return "Photo";
+    if (message.video) return "Video";
+    return "Message";
   }
 
   function clearLongPressTimer() {
@@ -435,22 +654,24 @@ export default function ChatContainer({
   }
 
   return (
-    <main className={`relative grid h-full min-h-0 grid-rows-[54px,minmax(0,1fr),auto] overflow-hidden rounded-2xl p-1 backdrop-blur-sm sm:grid-rows-[64px,minmax(0,1fr),auto] sm:p-3 ${isDark ? "border border-white/10 bg-black/15" : "border border-slate-300 bg-white/70"}`}>
-      <header className={`flex h-[54px] items-center justify-between rounded-xl px-2.5 sm:h-[64px] sm:px-3 ${isDark ? "border border-white/10 bg-white/5" : "border border-slate-200 bg-white/80"}`}>
+    <main className={`relative grid h-full min-h-0 grid-rows-[54px,minmax(0,1fr),auto] overflow-hidden rounded-2xl p-1 backdrop-blur-sm sm:grid-rows-[64px,minmax(0,1fr),auto] sm:p-3 lg:grid-rows-[70px,minmax(0,1fr),auto] lg:p-0 ${isDark ? "border border-white/10 bg-black/15" : "border border-slate-300 bg-white/70"}`}>
+      <header className={`flex h-[54px] items-center justify-between rounded-xl px-2.5 sm:h-[64px] sm:px-3 lg:h-[70px] lg:rounded-none lg:border-x-0 lg:border-t-0 lg:px-5 ${
+        isDark ? "border border-white/10 bg-white/5 lg:border-white/10 lg:bg-[#111111]/95" : "border border-slate-200 bg-white/80 lg:border-slate-200 lg:bg-white/95"
+      }`}>
         <button
           type="button"
           onClick={openContactPanel}
-          className={`flex min-w-0 items-center gap-2.5 rounded-xl pr-2 text-left transition sm:gap-3 ${
+          className={`flex min-w-0 items-center gap-2.5 rounded-xl pr-2 text-left transition sm:gap-3 lg:gap-4 lg:pr-4 ${
             isDark ? "hover:bg-white/5" : "hover:bg-slate-100/70"
           }`}
           aria-label="Open contact info"
           title="Open contact info"
         >
-          <ProfileAvatar src={selectedUser.profilePic} name={selectedUser.fullName} className="h-8 w-8 shrink-0 rounded-full object-cover sm:h-9 sm:w-9" />
+          <ProfileAvatar src={selectedUser.profilePic} name={selectedUser.fullName} className="h-8 w-8 shrink-0 rounded-full object-cover sm:h-9 sm:w-9 lg:h-12 lg:w-12" />
           <div className="min-w-0">
-            <p className={`truncate text-sm font-semibold ${isDark ? "text-slate-100" : "text-slate-900"}`}>{selectedUser.fullName}</p>
+            <p className={`truncate text-sm font-semibold lg:text-lg ${isDark ? "text-slate-100" : "text-slate-900"}`}>{selectedUser.fullName}</p>
             <p
-              className={`inline-flex items-center gap-1.5 text-xs ${
+              className={`inline-flex items-center gap-1.5 text-xs lg:hidden ${
                 isTyping ? "text-violet-300" : selectedUser.isOnline ? "text-emerald-500" : isDark ? "text-slate-400" : "text-slate-500"
               }`}
             >
@@ -492,12 +713,12 @@ export default function ChatContainer({
           >
             <FiGrid />
           </button>
-          <div className="relative hidden items-center gap-1.5 lg:flex" ref={callMenuRef}>
+          <div className="hidden items-center gap-5 lg:flex">
             <button
               type="button"
               onClick={onStartVideoCall}
-              className={`inline-flex h-9 w-9 items-center justify-center rounded-lg transition ${
-                isDark ? "border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
+              className={`inline-flex h-11 w-11 items-center justify-center rounded-full text-2xl transition ${
+                isDark ? "text-slate-100 hover:bg-white/10" : "text-slate-800 hover:bg-slate-100"
               }`}
               title="Video call"
             >
@@ -505,56 +726,20 @@ export default function ChatContainer({
             </button>
             <button
               type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                setIsCallMenuOpen((prev) => !prev);
-              }}
-              className={`inline-flex h-9 w-8 items-center justify-center rounded-lg transition ${
-                isDark ? "border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
+              onClick={onStartAudioCall}
+              disabled={isCallDisabled}
+              className={`inline-flex h-11 w-11 items-center justify-center rounded-full text-2xl transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                isDark ? "text-slate-100 hover:bg-white/10" : "text-slate-800 hover:bg-slate-100"
               }`}
-              title="Call options"
-              aria-label="Call options"
+              title={isCallDisabled ? "Audio call unavailable" : "Audio call"}
             >
-              <FiChevronDown className={`transition ${isCallMenuOpen ? "rotate-180" : ""}`} />
+              <FiPhone />
             </button>
-            {isCallMenuOpen && (
-              <div
-                className={`absolute right-0 top-11 z-40 w-44 origin-top-right rounded-xl border p-1 shadow-2xl transition ${
-                  isDark ? "border-white/10 bg-[#15151c] text-slate-100" : "border-slate-200 bg-white text-slate-800"
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsCallMenuOpen(false);
-                    onStartVideoCall?.();
-                  }}
-                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium ${isDark ? "hover:bg-white/10" : "hover:bg-slate-100"}`}
-                >
-                  <FiVideo />
-                  Video Call
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsCallMenuOpen(false);
-                    onStartAudioCall?.();
-                  }}
-                  disabled={isCallDisabled}
-                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium disabled:cursor-not-allowed disabled:opacity-45 ${
-                    isDark ? "hover:bg-white/10" : "hover:bg-slate-100"
-                  }`}
-                >
-                  <FiPhone />
-                  Audio Call
-                </button>
-              </div>
-            )}
             <button
               type="button"
               onClick={onOpenSearchPanel}
-              className={`inline-flex h-9 w-9 items-center justify-center rounded-lg transition ${
-                isDark ? "border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
+              className={`inline-flex h-11 w-11 items-center justify-center rounded-full text-2xl transition ${
+                isDark ? "text-slate-100 hover:bg-white/10" : "text-slate-800 hover:bg-slate-100"
               }`}
               title="Search messages"
             >
@@ -591,6 +776,8 @@ export default function ChatContainer({
           const swipeOffset = swipeState?.id === m._id ? swipeState.offset : 0;
           const matchesSearch = Boolean(searchKeyword.trim() && m.text?.toLowerCase().includes(searchKeyword.trim().toLowerCase()));
           const isActiveSearchMatch = activeSearchMessageId === m._id;
+          const isForwardSelected = selectedForwardMessageIds.includes(m._id);
+          const isForwardedMessage = Boolean(m.isForwarded || m.originalMessageId || m.forwardedFrom);
           return (
             <div
               key={m._id}
@@ -598,7 +785,10 @@ export default function ChatContainer({
                 if (node) messageRefs.current.set(m._id, node);
                 else messageRefs.current.delete(m._id);
               }}
-              className={`relative flex ${isMine ? "justify-end" : "justify-start"}`}
+              className={`relative flex ${isForwardMode ? "pl-10" : ""} ${isMine ? "justify-end" : "justify-start"}`}
+              onClick={() => {
+                if (isForwardMode) toggleForwardMessage(m._id);
+              }}
               onTouchStart={(event) => handleTouchStart(event, m)}
               onTouchMove={(event) => handleTouchMove(event, m)}
               onTouchEnd={() => handleTouchEnd(m)}
@@ -607,6 +797,26 @@ export default function ChatContainer({
                 openMessageMenu(m, event, isMine);
               }}
             >
+              {isForwardMode && (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    toggleForwardMessage(m._id);
+                  }}
+                  className={`absolute left-1 top-1/2 z-20 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-md border transition ${
+                    isForwardSelected
+                      ? "border-violet-400 bg-violet-500 text-white"
+                      : isDark
+                        ? "border-white/30 bg-black/50 text-transparent hover:border-violet-300"
+                        : "border-slate-400 bg-white text-transparent hover:border-violet-500"
+                  }`}
+                  aria-label={isForwardSelected ? "Unselect message" : "Select message"}
+                  title={isForwardSelected ? "Unselect message" : "Select message"}
+                >
+                  {isForwardSelected && <FiCheckSquare className="h-4 w-4" />}
+                </button>
+              )}
               {swipeOffset > 10 && (
                 <div className={`absolute left-2 top-1/2 -translate-y-1/2 rounded-full p-2 ${isDark ? "bg-white/10 text-violet-200" : "bg-violet-100 text-violet-700"}`}>
                   <FiCornerUpLeft />
@@ -619,7 +829,9 @@ export default function ChatContainer({
                 <div
                   className={`group relative max-w-full rounded-2xl px-2.5 py-2 transition sm:px-3 ${
                     isMine ? "bg-violet-600 text-white" : isDark ? "bg-white/10 text-slate-100" : "bg-slate-100 text-slate-800"
-                  } ${matchesSearch ? (isActiveSearchMatch ? "ring-2 ring-amber-300/90" : "ring-1 ring-amber-300/45") : ""}`}
+                  } ${matchesSearch ? (isActiveSearchMatch ? "ring-2 ring-amber-300/90" : "ring-1 ring-amber-300/45") : ""} ${
+                    isForwardSelected ? "ring-2 ring-emerald-400/80" : ""
+                  }`}
                 >
                   <button
                     type="button"
@@ -649,6 +861,30 @@ export default function ChatContainer({
                         >
                           <FiCornerUpLeft className="h-4 w-4 shrink-0" />
                           Reply
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => copyMessage(m)}
+                          className={`flex w-full items-center gap-3 whitespace-nowrap px-3.5 py-2.5 text-left font-medium ${isDark ? "hover:bg-white/10" : "hover:bg-slate-100"}`}
+                        >
+                          <FiCopy className="h-4 w-4 shrink-0" />
+                          Copy
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => startForwardMode(m)}
+                          className={`flex w-full items-center gap-3 whitespace-nowrap px-3.5 py-2.5 text-left font-medium ${isDark ? "hover:bg-white/10" : "hover:bg-slate-100"}`}
+                        >
+                          <FiShare2 className="h-4 w-4 shrink-0" />
+                          Forward
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => startForwardMode(m)}
+                          className={`flex w-full items-center gap-3 whitespace-nowrap px-3.5 py-2.5 text-left font-medium ${isDark ? "hover:bg-white/10" : "hover:bg-slate-100"}`}
+                        >
+                          <FiCheckSquare className="h-4 w-4 shrink-0" />
+                          Select
                         </button>
                         {isMine && !m.pending && (
                           <button
@@ -688,7 +924,7 @@ export default function ChatContainer({
                         </button>
                         <button
                           type="button"
-                          onClick={() => showPendingMessageAction("Forward")}
+                          onClick={() => startForwardMode(m)}
                           className={`flex w-full items-center gap-3 whitespace-nowrap px-3.5 py-2.5 text-left font-medium ${isDark ? "hover:bg-white/10" : "hover:bg-slate-100"}`}
                         >
                           <FiShare2 className="h-4 w-4 shrink-0" />
@@ -696,7 +932,7 @@ export default function ChatContainer({
                         </button>
                         <button
                           type="button"
-                          onClick={() => showPendingMessageAction("Select")}
+                          onClick={() => startForwardMode(m)}
                           className={`flex w-full items-center gap-3 whitespace-nowrap px-3.5 py-2.5 text-left font-medium ${isDark ? "hover:bg-white/10" : "hover:bg-slate-100"}`}
                         >
                           <FiCheckSquare className="h-4 w-4 shrink-0" />
@@ -717,6 +953,16 @@ export default function ChatContainer({
                         )}
                       </div>
                     </>
+                  )}
+                  {isForwardedMessage && (
+                    <p
+                      className={`mb-1 flex items-center gap-1 text-left text-[12px] italic leading-none ${
+                        isMine ? "text-white/75" : isDark ? "text-slate-300/80" : "text-slate-500"
+                      }`}
+                    >
+                      <span className="text-[13px] leading-none">{"\u21AA"}</span>
+                      <span>Forwarded</span>
+                    </p>
                   )}
                   {!!getMessageId(m.replyTo) && (
                     <div className={`mb-2 max-w-[min(70vw,320px)] rounded-xl border-l-2 px-2.5 py-2 text-xs ${isMine ? "border-white/70 bg-black/15 text-white/90" : isDark ? "border-violet-300 bg-black/25 text-slate-200" : "border-violet-500 bg-white/80 text-slate-700"}`}>
@@ -743,7 +989,14 @@ export default function ChatContainer({
                     <div
                       role="button"
                       tabIndex={0}
-                      onClick={() => onPreviewMedia?.({ id: m._id, type: "image", src: m.image })}
+                      onClick={(event) => {
+                        if (isForwardMode) {
+                          event.stopPropagation();
+                          toggleForwardMessage(m._id);
+                          return;
+                        }
+                        onPreviewMedia?.({ id: m._id, type: "image", src: m.image });
+                      }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
@@ -759,7 +1012,14 @@ export default function ChatContainer({
                     <div
                       role="button"
                       tabIndex={0}
-                      onClick={() => onPreviewMedia?.({ id: m._id, type: "video", src: m.video })}
+                      onClick={(event) => {
+                        if (isForwardMode) {
+                          event.stopPropagation();
+                          toggleForwardMessage(m._id);
+                          return;
+                        }
+                        onPreviewMedia?.({ id: m._id, type: "video", src: m.video });
+                      }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
@@ -808,6 +1068,208 @@ export default function ChatContainer({
         </button>
       )}
 
+      {isForwardMode && (
+        <div className={`mt-1 flex h-[58px] shrink-0 items-center justify-between rounded-xl px-3 sm:mt-2 ${
+          isDark ? "border border-white/10 bg-[#15151c]/95 text-slate-100" : "border border-slate-300 bg-white text-slate-800"
+        }`}>
+          <button
+            type="button"
+            onClick={closeForwardMode}
+            className={`inline-flex items-center gap-3 rounded-full px-2 py-2 font-semibold ${isDark ? "hover:bg-white/10" : "hover:bg-slate-100"}`}
+            aria-label="Exit selection mode"
+          >
+            <FiX className="h-5 w-5" />
+            <span>{selectedForwardMessages.length} selected</span>
+          </button>
+          <div className="flex items-center gap-2 sm:gap-4">
+            <button
+              type="button"
+              onClick={copySelectedMessages}
+              disabled={selectedForwardMessages.length === 0}
+              className={`grid h-10 w-10 place-items-center rounded-full text-xl transition hover:scale-105 disabled:cursor-not-allowed disabled:opacity-45 ${
+                isDark ? "text-slate-100 hover:bg-white/10" : "text-slate-700 hover:bg-slate-100"
+              }`}
+              aria-label="Copy selected messages"
+              title="Copy"
+            >
+              <FiCopy />
+            </button>
+            <button
+              type="button"
+              onClick={deleteSelectedMessages}
+              disabled={selectedForwardOwnMessages.length === 0}
+              className={`grid h-10 w-10 place-items-center rounded-full text-xl transition hover:scale-105 disabled:cursor-not-allowed disabled:opacity-45 ${
+                isDark ? "text-slate-100 hover:bg-white/10" : "text-slate-700 hover:bg-slate-100"
+              }`}
+              aria-label="Delete selected messages"
+              title={selectedForwardOwnMessages.length === 0 ? "Only your sent messages can be deleted" : "Delete"}
+            >
+              <FiTrash2 />
+            </button>
+            <button
+              type="button"
+              onClick={openForwardModal}
+              disabled={selectedForwardMessages.length === 0}
+              className={`grid h-10 w-10 place-items-center rounded-full text-xl transition hover:scale-105 disabled:cursor-not-allowed disabled:opacity-45 ${
+                isDark ? "text-slate-100 hover:bg-white/10" : "text-slate-700 hover:bg-slate-100"
+              }`}
+              aria-label="Forward selected messages"
+              title="Forward"
+            >
+              <FiShare2 />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {isForwardModalOpen && (
+        <div
+          className="fixed inset-0 z-[90] flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setIsForwardModalOpen(false);
+          }}
+        >
+          <section
+            className={`flex h-[92vh] w-full max-w-xl flex-col overflow-hidden rounded-t-3xl shadow-2xl sm:h-[min(84vh,760px)] sm:rounded-3xl ${
+              isDark ? "border border-white/10 bg-[#151515] text-slate-100" : "border border-slate-200 bg-white text-slate-900"
+            }`}
+            onMouseDown={(event) => event.stopPropagation()}
+            aria-label="Forward message to"
+          >
+            <div className="flex shrink-0 items-center gap-3 px-4 py-4">
+              <button
+                type="button"
+                onClick={() => setIsForwardModalOpen(false)}
+                className={`grid h-9 w-9 shrink-0 place-items-center rounded-full ${isDark ? "hover:bg-white/10" : "hover:bg-slate-100"}`}
+                aria-label="Close forward panel"
+              >
+                <FiX className="h-5 w-5" />
+              </button>
+              <h3 className="min-w-0 flex-1 truncate text-lg font-semibold">Forward message to</h3>
+            </div>
+
+            <div className="shrink-0 px-4 pb-3">
+              <div className={`relative rounded-full border ${isDark ? "border-white/80 bg-white/5" : "border-slate-300 bg-slate-50"}`}>
+                <FiSearch className={`pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 ${isDark ? "text-slate-300" : "text-slate-500"}`} />
+                <input
+                  ref={forwardSearchInputRef}
+                  value={forwardSearch}
+                  onChange={(event) => setForwardSearch(event.target.value)}
+                  className={`h-12 w-full rounded-full bg-transparent pl-12 pr-4 outline-none ${isDark ? "text-slate-100 placeholder:text-slate-400" : "text-slate-900 placeholder:text-slate-500"}`}
+                  placeholder="Search name"
+                />
+              </div>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+              <p className={`px-3 py-3 text-sm font-semibold ${isDark ? "text-slate-400" : "text-slate-500"}`}>Recent chats</p>
+              {filteredForwardUsers.length === 0 ? (
+                <p className={`px-3 py-6 text-sm ${isDark ? "text-slate-400" : "text-slate-500"}`}>No user found.</p>
+              ) : (
+                filteredForwardUsers.map((item) => {
+                  const isSelected = selectedForwardUserIds.includes(item._id);
+                  return (
+                    <button
+                      key={item._id}
+                      type="button"
+                      onClick={() => toggleForwardUser(item._id)}
+                      className={`flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition ${
+                        isSelected
+                          ? isDark
+                            ? "bg-violet-500/18"
+                            : "bg-violet-50"
+                          : isDark
+                            ? "hover:bg-white/10"
+                            : "hover:bg-slate-50"
+                      }`}
+                    >
+                      <span className={`grid h-5 w-5 shrink-0 place-items-center rounded border ${
+                        isSelected
+                          ? "border-violet-400 bg-violet-500 text-white"
+                          : isDark
+                            ? "border-slate-500 text-transparent"
+                            : "border-slate-400 text-transparent"
+                      }`}>
+                        {isSelected && <FiCheckSquare className="h-4 w-4" />}
+                      </span>
+                      <ProfileAvatar src={item.profilePic} name={item.fullName} className="h-12 w-12 shrink-0 rounded-full object-cover" />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-semibold">{item.fullName}</p>
+                        <p className={`truncate text-sm ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                          {item.isOnline ? "Online" : "Recent chat"}
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+
+            <div className={`shrink-0 border-t p-3 ${isDark ? "border-white/10 bg-[#202020]" : "border-slate-200 bg-slate-50"}`}>
+              {selectedForwardUsers.length > 0 && (
+                <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
+                  {selectedForwardUsers.map((item) => (
+                    <button
+                      key={item._id}
+                      type="button"
+                      onClick={() => toggleForwardUser(item._id)}
+                      className={`flex shrink-0 items-center gap-2 rounded-full px-2 py-1 text-sm ${isDark ? "bg-white/10 text-slate-100" : "bg-white text-slate-800"}`}
+                      title="Remove selected user"
+                    >
+                      <ProfileAvatar src={item.profilePic} name={item.fullName} className="h-6 w-6 rounded-full object-cover" />
+                      <span className="max-w-[120px] truncate">{item.fullName}</span>
+                      <FiX className="h-3.5 w-3.5" />
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <div className="mb-3 flex items-end gap-2">
+                <div className={`flex h-20 w-24 shrink-0 items-center justify-center overflow-hidden rounded-xl ${isDark ? "bg-black/30" : "bg-white"}`}>
+                  {selectedForwardMessages[0]?.image ? (
+                    <img src={selectedForwardMessages[0].image} alt="Forward preview" className="h-full w-full object-cover" />
+                  ) : selectedForwardMessages[0]?.video ? (
+                    <video className="h-full w-full object-cover" muted playsInline>
+                      <source src={selectedForwardMessages[0].video} />
+                    </video>
+                  ) : (
+                    <FiShare2 className={`h-7 w-7 ${isDark ? "text-slate-400" : "text-slate-500"}`} />
+                  )}
+                </div>
+                <div className={`min-w-0 flex-1 rounded-xl px-3 py-2 text-sm ${isDark ? "bg-black/25 text-slate-200" : "bg-white text-slate-700"}`}>
+                  <p className="line-clamp-2 font-medium">{getForwardPreview(selectedForwardMessages[0])}</p>
+                  {selectedForwardMessages.length > 1 && (
+                    <p className={`mt-1 text-xs ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                      +{selectedForwardMessages.length - 1} more message{selectedForwardMessages.length - 1 === 1 ? "" : "s"}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  value={forwardNote}
+                  onChange={(event) => setForwardNote(event.target.value)}
+                  className={`h-12 min-w-0 flex-1 rounded-xl px-4 outline-none ${isDark ? "bg-black/25 text-slate-100 placeholder:text-slate-400" : "bg-white text-slate-900 placeholder:text-slate-500"}`}
+                  placeholder="Add a message..."
+                />
+                <button
+                  type="button"
+                  onClick={sendForwardedMessages}
+                  disabled={selectedForwardUsers.length === 0 || isForwardSending}
+                  className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-white text-xl text-slate-950 shadow-lg transition hover:scale-105 disabled:cursor-not-allowed disabled:opacity-50"
+                  aria-label="Send forwarded message"
+                  title="Send forwarded message"
+                >
+                  <FiSend />
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {!isForwardMode && (
       <form onSubmit={onSend} className={`mt-1 shrink-0 rounded-xl p-1.5 sm:mt-2 sm:p-2 ${isDark ? "border border-white/10 bg-black/40" : "border border-slate-300 bg-white/90"}`}>
         {replyToMessage && (
           <div className={`mb-2 flex items-center gap-2 rounded-xl border-l-2 px-2.5 py-2 text-xs ${isDark ? "border-violet-300 bg-white/10 text-slate-200" : "border-violet-500 bg-slate-100 text-slate-700"}`}>
@@ -942,6 +1404,7 @@ export default function ChatContainer({
           </button>
         </div>
       </form>
+      )}
     </main>
   );
 }

@@ -9,6 +9,7 @@ const {
   getTypingStatus,
   updateProfile,
   deleteAccount,
+  updateBlockedUser,
 } = require("../controllers/user.controller");
 
 const router = express.Router();
@@ -20,6 +21,7 @@ router.patch("/presence/online", markPresenceOnline);
 router.patch("/encryption-key", updateEncryptionKey);
 router.patch("/typing", updateTypingStatus);
 router.get("/typing/:userId", getTypingStatus);
+router.patch("/:userId/block", updateBlockedUser);
 router.put("/profile", updateProfile);
 router.delete("/profile", deleteAccount);
 

@@ -13,6 +13,7 @@ const userSchema = new mongoose.Schema(
     encryptionKeyBackup: { type: String, default: "" },
     activeSessionId: { type: String, default: "" },
     activeSessionStartedAt: { type: Date, default: null },
+    blockedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: "User", index: true }],
     isOnline: { type: Boolean, default: false },
     lastSeen: { type: Date, default: null },
   },
