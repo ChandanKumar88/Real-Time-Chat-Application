@@ -29,7 +29,8 @@ async function getConversation(req, res) {
 
   const messages = await Message.find(conversationQuery)
     .sort({ createdAt: -1 })
-    .limit(limit + 1);
+    .limit(limit + 1)
+    .lean();
   const hasMore = messages.length > limit;
   const pageMessages = messages.slice(0, limit).reverse();
 

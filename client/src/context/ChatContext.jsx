@@ -15,6 +15,7 @@ const TYPING_POLL_INTERVAL_MS = 1000;
 const TYPING_HTTP_THROTTLE_MS = 1500;
 const MESSAGES_CACHE_LIMIT_PER_CHAT = 80;
 const MESSAGES_PAGE_SIZE = 50;
+const MESSAGES_PREFETCH_LIMIT = 6;
 
 function sortMessagesByCreatedAt(nextMessages = []) {
   return [...nextMessages].sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
@@ -22,6 +23,31 @@ function sortMessagesByCreatedAt(nextMessages = []) {
 
 function getMessagesCacheKey(userId) {
   return `quickchat_messages_cache_${userId}`;
+}
+
+function readStoredMessagesCache(userId) {
+  if (!userId || typeof window === "undefined") return {};
+
+  try {
+    const cacheKey = getMessagesCacheKey(userId);
+    const savedCache = sessionStorage.getItem(cacheKey) || localStorage.getItem(cacheKey);
+    return savedCache ? pruneMessagesCache(JSON.parse(savedCache)) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeStoredMessagesCache(userId, cache) {
+  if (!userId || typeof window === "undefined") return;
+
+  try {
+    const serializedCache = JSON.stringify(pruneMessagesCache(cache));
+    const cacheKey = getMessagesCacheKey(userId);
+    sessionStorage.setItem(cacheKey, serializedCache);
+    localStorage.setItem(cacheKey, serializedCache);
+  } catch {
+    // Cache is an enhancement only; chat should keep working if storage is full or unavailable.
+  }
 }
 
 function pruneMessagesCache(cache) {
@@ -58,6 +84,7 @@ export function ChatProvider({ children }) {
   const messagesCacheRef = useRef({});
   const messagesPagingRef = useRef({});
   const onlineUserIdsRef = useRef(new Set());
+  const prefetchedUserIdsRef = useRef(new Set());
   const typingStopTimersRef = useRef({});
   const typingStaleTimersRef = useRef({});
   const typingHttpSentAtRef = useRef({});
@@ -115,25 +142,15 @@ export function ChatProvider({ children }) {
   useEffect(() => {
     if (!user?._id) return;
 
-    try {
-      const savedCache = sessionStorage.getItem(getMessagesCacheKey(user._id));
-      const nextCache = savedCache ? pruneMessagesCache(JSON.parse(savedCache)) : {};
-      messagesCacheRef.current = nextCache;
-      setMessagesCache(nextCache);
-    } catch {
-      messagesCacheRef.current = {};
-      setMessagesCache({});
-    }
+    const nextCache = readStoredMessagesCache(user._id);
+    messagesCacheRef.current = nextCache;
+    setMessagesCache(nextCache);
+    prefetchedUserIdsRef.current = new Set(Object.keys(nextCache));
   }, [user?._id]);
 
   useEffect(() => {
     if (!user?._id) return;
-
-    try {
-      sessionStorage.setItem(getMessagesCacheKey(user._id), JSON.stringify(pruneMessagesCache(messagesCache)));
-    } catch {
-      // Cache is an enhancement only; chat should keep working if storage is full or unavailable.
-    }
+    writeStoredMessagesCache(user._id, messagesCache);
   }, [messagesCache, user?._id]);
 
   const removeMessageFromCache = useCallback((messageId) => {
@@ -337,6 +354,25 @@ export function ChatProvider({ children }) {
   }, [user]);
 
   useEffect(() => {
+    if (!user?._id || user.encryptionPassphraseRequired || !users.length) return;
+
+    const usersToPrefetch = users
+      .filter((item) => item?._id && item._id !== user._id && !messagesCacheRef.current[item._id]?.length)
+      .filter((item) => !prefetchedUserIdsRef.current.has(item._id))
+      .slice(0, MESSAGES_PREFETCH_LIMIT);
+
+    if (!usersToPrefetch.length) return;
+
+    usersToPrefetch.forEach((item) => prefetchedUserIdsRef.current.add(item._id));
+    usersToPrefetch.forEach((item) => {
+      loadMessages(item._id, { showLoader: false, peerUser: item }).catch(() => {
+        prefetchedUserIdsRef.current.delete(item._id);
+      });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?._id, user?.encryptionPassphraseRequired, users]);
+
+  useEffect(() => {
     if (!user || user.encryptionPassphraseRequired || !selectedUser) return;
 
     async function refreshActiveConversation() {
@@ -528,7 +564,16 @@ export function ChatProvider({ children }) {
     if (selectedUserRef.current?._id === nextUser._id) return;
 
     messagesAbortRef.current?.abort();
-    const cachedMessages = messagesCacheRef.current[nextUser._id];
+    let cachedMessages = messagesCacheRef.current[nextUser._id];
+    if (!cachedMessages?.length && user?._id) {
+      const storedCache = readStoredMessagesCache(user._id);
+      cachedMessages = storedCache[nextUser._id];
+      if (cachedMessages?.length) {
+        const nextCache = { ...messagesCacheRef.current, [nextUser._id]: cachedMessages };
+        messagesCacheRef.current = nextCache;
+        setMessagesCache(nextCache);
+      }
+    }
     const requestId = messagesRequestIdRef.current + 1;
     const abortController = new AbortController();
 
@@ -537,7 +582,7 @@ export function ChatProvider({ children }) {
     selectedUserRef.current = nextUser;
     setSelectedUser(nextUser);
     setMessages(cachedMessages || []);
-    setMessagesLoading(!cachedMessages);
+    setMessagesLoading(false);
     setMessagesPaging((prev) => {
       const cachedOldest = cachedMessages?.[0]?.createdAt || null;
       const nextPaging = {
@@ -556,7 +601,7 @@ export function ChatProvider({ children }) {
     loadMessages(nextUser._id, {
       signal: abortController.signal,
       requestId,
-      showLoader: !cachedMessages,
+      showLoader: false,
       peerUser: nextUser,
     }).catch((error) => {
       if (error?.code === "ERR_CANCELED" || error?.name === "CanceledError" || abortController.signal.aborted) return;
