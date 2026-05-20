@@ -391,11 +391,11 @@ export default function HomePage() {
     const serverMessage = error?.response?.data?.message;
 
     if (status === 413) {
-      return "Video bahut bada hai. Vercel server 4.5MB se bada upload accept nahi karta.";
+      return "Video payload is too large. Select the video again so it can upload directly first.";
     }
 
-    if (payload?.video && !serverMessage) {
-      return "Video upload fail hua. Vercel deploy par video ko chhota rakho, warna body size limit hit hoti hai.";
+    if ((payload?.video || payload?.videoUrl) && !serverMessage) {
+      return "Video send failed. Please try uploading the video again.";
     }
 
     return serverMessage || error?.message || "Failed to send media";
@@ -1397,7 +1397,14 @@ export default function HomePage() {
           onSend={async (e) => {
             e.preventDefault();
             if (!selectedUser || (!text.trim() && !image && !video)) return;
-            const payload = { text: text.trim(), image, video, replyTo: replyToMessage?._id || null };
+            const isUploadedVideoUrl = /^https?:\/\//i.test(video);
+            const payload = {
+              text: text.trim(),
+              image,
+              video: isUploadedVideoUrl ? "" : video,
+              videoUrl: isUploadedVideoUrl ? video : "",
+              replyTo: replyToMessage?._id || null,
+            };
             setText("");
             setImage("");
             setVideo("");
@@ -1408,7 +1415,7 @@ export default function HomePage() {
             } catch (error) {
               setText(payload.text);
               setImage(payload.image);
-              setVideo(payload.video);
+              setVideo(payload.videoUrl || payload.video);
               setReplyToMessage(replyToMessage);
               toast.error(getSendErrorMessage(error, payload));
             }

@@ -19,9 +19,30 @@ import {
 import logoIcon from "../assets/logo_icon.svg";
 import ProfileAvatar from "./ProfileAvatar";
 import { processImageFile } from "../utils/image";
+import { api } from "../services/api";
 
-const IS_VERCEL_HOSTED = typeof window !== "undefined" && window.location.hostname.endsWith("vercel.app");
-const MAX_VIDEO_SIZE_MB = IS_VERCEL_HOSTED ? 4.5 : 12;
+const MAX_VIDEO_SIZE_MB = 50;
+
+async function uploadVideoToCloudinary(file) {
+  const { data } = await api.get("/messages/upload/signature");
+  const uploadConfig = data.data;
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("api_key", uploadConfig.apiKey);
+  formData.append("timestamp", uploadConfig.timestamp);
+  formData.append("signature", uploadConfig.signature);
+  formData.append("folder", uploadConfig.folder);
+
+  const response = await fetch(`https://api.cloudinary.com/v1_1/${uploadConfig.cloudName}/video/upload`, {
+    method: "POST",
+    body: formData,
+  });
+  const result = await response.json();
+  if (!response.ok || !result.secure_url) {
+    throw new Error(result.error?.message || "Video upload failed");
+  }
+  return result.secure_url;
+}
 
 export default function ChatContainer({
   user,
@@ -85,6 +106,7 @@ export default function ChatContainer({
   const [selectedForwardUserIds, setSelectedForwardUserIds] = useState([]);
   const [forwardNote, setForwardNote] = useState("");
   const [isForwardSending, setIsForwardSending] = useState(false);
+  const [isVideoUploading, setIsVideoUploading] = useState(false);
   const isDark = theme === "dark";
 
   const selectedForwardMessages = useMemo(
@@ -1315,8 +1337,13 @@ export default function ChatContainer({
             </div>
             <div className="min-w-0 flex-1">
               <p className="truncate font-medium">{video ? "Video attached" : "Image attached"}</p>
-              <p className={`${isDark ? "text-slate-400" : "text-slate-500"}`}>Send karne se pehle yahan se hata sakte ho</p>
+              <p className={`${isDark ? "text-slate-400" : "text-slate-500"}`}>You can remove it before sending.</p>
             </div>
+          </div>
+        )}
+        {isVideoUploading && (
+          <div className={`mb-2 rounded-xl px-3 py-2 text-xs font-medium ${isDark ? "bg-white/10 text-violet-100" : "bg-violet-50 text-violet-700"}`}>
+            Uploading video...
           </div>
         )}
         {!!mediaError && (
@@ -1346,9 +1373,7 @@ export default function ChatContainer({
                 if (file.type.startsWith("video/")) {
                   const maxVideoBytes = MAX_VIDEO_SIZE_MB * 1024 * 1024;
                   if (file.size > maxVideoBytes) {
-                    const message = IS_VERCEL_HOSTED
-                      ? `Vercel deploy par video ${MAX_VIDEO_SIZE_MB}MB ya usse chhota rakho, warna upload fail ho sakta hai`
-                      : `Video ${MAX_VIDEO_SIZE_MB}MB se chhota rakho for faster upload`;
+                    const message = `Video ${MAX_VIDEO_SIZE_MB}MB or smaller upload karo.`;
                     setMediaError(message);
                     toast.error(message);
                     setImage("");
@@ -1357,17 +1382,13 @@ export default function ChatContainer({
                     return;
                   }
 
-                  const reader = new FileReader();
-                  reader.onloadend = () => {
-                    setMediaError("");
-                    setVideo(reader.result);
-                    setImage("");
-                  };
-                  reader.onerror = () => {
-                    setMediaError("Video read nahi ho pa raha");
-                    toast.error("Video read nahi ho pa raha");
-                  };
-                  reader.readAsDataURL(file);
+                  setImage("");
+                  setVideo("");
+                  setIsVideoUploading(true);
+                  const videoUrl = await uploadVideoToCloudinary(file);
+                  setMediaError("");
+                  setVideo(videoUrl);
+                  toast.success("Video attached");
                   return;
                 }
 
@@ -1379,10 +1400,12 @@ export default function ChatContainer({
                 setMediaError("");
                 setImage(compressedImage);
                 setVideo("");
-              } catch {
-                setMediaError("Media process nahi ho pa raha");
-                toast.error("Media process nahi ho pa raha");
+              } catch (error) {
+                const message = error?.response?.data?.message || error?.message || "Media upload failed";
+                setMediaError(message);
+                toast.error(message);
               } finally {
+                setIsVideoUploading(false);
                 e.target.value = "";
               }
             }}
@@ -1398,7 +1421,10 @@ export default function ChatContainer({
             onChange={(e) => (onTextChange ? onTextChange(e.target.value) : setText(e.target.value))}
             placeholder="Type a message..."
           />
-          <button className="inline-flex h-8 w-10 shrink-0 items-center justify-center rounded-lg bg-gradient-to-r from-violet-500 to-fuchsia-500 text-sm font-medium text-white transition hover:opacity-95 sm:h-10 sm:min-w-[88px] sm:gap-2 sm:rounded-xl sm:px-4">
+          <button
+            disabled={isVideoUploading}
+            className="inline-flex h-8 w-10 shrink-0 items-center justify-center rounded-lg bg-gradient-to-r from-violet-500 to-fuchsia-500 text-sm font-medium text-white transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50 sm:h-10 sm:min-w-[88px] sm:gap-2 sm:rounded-xl sm:px-4"
+          >
             <FiSend />
             <span className="hidden sm:inline">Send</span>
           </button>

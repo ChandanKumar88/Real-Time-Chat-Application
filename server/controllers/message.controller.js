@@ -4,6 +4,31 @@ const User = require("../models/User");
 const { cloudinary } = require("../config/cloudinary");
 const { getSocketIdsByUserId } = require("../socket/presenceStore");
 
+function getUploadSignature(_req, res) {
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+  const apiKey = process.env.CLOUDINARY_API_KEY;
+  const apiSecret = process.env.CLOUDINARY_API_SECRET;
+  const folder = "chat-app/messages";
+  const timestamp = Math.round(Date.now() / 1000);
+
+  if (!cloudName || !apiKey || !apiSecret) {
+    return res.status(500).json({ success: false, message: "Cloudinary upload is not configured" });
+  }
+
+  const signature = cloudinary.utils.api_sign_request({ folder, timestamp }, apiSecret);
+
+  res.json({
+    success: true,
+    data: {
+      cloudName,
+      apiKey,
+      folder,
+      timestamp,
+      signature,
+    },
+  });
+}
+
 async function getConversation(req, res) {
   const { userId } = req.params;
   const myId = req.user.id;
@@ -243,4 +268,4 @@ async function deleteConversation(req, res) {
   res.json({ success: true, message: "Chat deleted", data: { userId } });
 }
 
-module.exports = { getConversation, sendMessage, markSeen, deleteMessage, clearConversation, deleteConversation };
+module.exports = { getConversation, getUploadSignature, sendMessage, markSeen, deleteMessage, clearConversation, deleteConversation };
