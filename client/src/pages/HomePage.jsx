@@ -28,6 +28,7 @@ import { api, isManualLogoutInProgress } from "../services/api";
 import Sidebar from "../components/Sidebar";
 import ChatContainer from "../components/ChatContainer";
 import RightSidebar from "../components/RightSidebar";
+import ProfileAvatar from "../components/ProfileAvatar";
 import bgImage from "../assets/bgImage.svg";
 
 const CALL_EVENT_POLL_INTERVAL_MS = 900;
@@ -246,9 +247,23 @@ export default function HomePage() {
           id: m._id,
           type: m.image ? "image" : "video",
           src: m.image || m.video,
+          senderId: m.senderId,
+          createdAt: m.createdAt,
         })),
     [messages]
   );
+  const previewIndex = useMemo(
+    () => (previewMedia ? previewableMedia.findIndex((item) => item.id === previewMedia.id) : -1),
+    [previewMedia, previewableMedia]
+  );
+  const previewSender = useMemo(() => {
+    if (!previewMedia) return null;
+    const isMine = previewMedia.senderId === user?._id;
+    return {
+      fullName: isMine ? user?.fullName || "You" : selectedUser?.fullName || "QuickChat user",
+      profilePic: isMine ? user?.profilePic : selectedUser?.profilePic,
+    };
+  }, [previewMedia, selectedUser, user]);
   const messageSearchResults = useMemo(() => {
     const keyword = messageSearch.trim().toLowerCase();
     if (!keyword) return [];
@@ -298,6 +313,20 @@ export default function HomePage() {
     const dx = first.clientX - second.clientX;
     const dy = first.clientY - second.clientY;
     return Math.hypot(dx, dy);
+  }
+
+  function formatPreviewDateTime(value) {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toLocaleString("en-IN", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    });
   }
 
   async function handleDownloadPreview() {
@@ -1531,131 +1560,132 @@ export default function HomePage() {
       ) : null}
 
       {previewMedia ? (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          {previewableMedia.length > 1 && (
-            <>
+        <div className="fixed inset-0 z-[60] flex min-h-[100dvh] flex-col overflow-hidden bg-[#111312] text-white">
+          <div className="flex h-[74px] shrink-0 items-center justify-between border-b border-white/10 bg-[#1b1d1c] px-4 sm:px-8">
+            <div className="flex min-w-0 items-center gap-3">
+              <ProfileAvatar src={previewSender?.profilePic} name={previewSender?.fullName} className="h-11 w-11 rounded-full object-cover" />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold sm:text-base">{previewSender?.fullName || "QuickChat user"}</p>
+                <p className="truncate text-xs text-slate-300 sm:text-sm">{formatPreviewDateTime(previewMedia.createdAt)}</p>
+              </div>
+            </div>
+
+            <div className="hidden items-center gap-3 text-white/80 sm:flex">
               <button
                 type="button"
-                onClick={() => stepPreview(-1)}
-                className="absolute left-4 top-1/2 z-[61] inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur hover:bg-white/20"
-                aria-label="Previous media"
+                onClick={() => setPreviewZoom((prev) => clampZoom(prev - 0.25))}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full transition hover:bg-white/10 disabled:opacity-30"
+                aria-label="Zoom out"
+                disabled={previewMedia.type !== "image" || previewZoom <= 1}
               >
-                <FiChevronLeft />
+                <FiMinus />
               </button>
               <button
                 type="button"
-                onClick={() => stepPreview(1)}
-                className="absolute right-4 top-1/2 z-[61] inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur hover:bg-white/20"
-                aria-label="Next media"
+                onClick={() => setPreviewZoom((prev) => clampZoom(prev + 0.25))}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full transition hover:bg-white/10 disabled:opacity-30"
+                aria-label="Zoom in"
+                disabled={previewMedia.type !== "image"}
               >
-                <FiChevronRight />
+                <FiPlus />
               </button>
-            </>
-          )}
-          <button
-            type="button"
-            onClick={() => setPreviewMedia(null)}
-            className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur hover:bg-white/20"
-            aria-label="Close preview"
-          >
-            <FiX />
-          </button>
-          {previewMedia.type === "image" ? (
-            <>
-              <div className="absolute bottom-4 left-1/2 z-[61] flex -translate-x-1/2 items-center gap-2 rounded-full bg-white/10 px-3 py-2 text-white backdrop-blur">
-                <button
-                  type="button"
-                  onClick={() => setPreviewZoom((prev) => clampZoom(prev - 0.25))}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
-                  aria-label="Zoom out"
-                >
-                  <FiMinus />
-                </button>
-                <span className="min-w-12 text-center text-sm font-medium">{Math.round(previewZoom * 100)}%</span>
-                <button
-                  type="button"
-                  onClick={() => setPreviewZoom((prev) => clampZoom(prev + 0.25))}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
-                  aria-label="Zoom in"
-                >
-                  <FiPlus />
-                </button>
+            </div>
+
+            <div className="flex shrink-0 items-center gap-2 text-white/90 sm:gap-4">
+              <button
+                type="button"
+                onClick={handleSharePreview}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full transition hover:bg-white/10"
+                aria-label="Share media"
+                title="Share"
+              >
+                <FiShare2 className="text-xl" />
+              </button>
+              <button
+                type="button"
+                onClick={handleDownloadPreview}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full transition hover:bg-white/10"
+                aria-label="Download media"
+                title="Download"
+              >
+                <FiDownload className="text-xl" />
+              </button>
+              {previewMedia.type === "image" && (
                 <button
                   type="button"
                   onClick={() => setPreviewZoom(1)}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
+                  className="hidden h-10 w-10 items-center justify-center rounded-full transition hover:bg-white/10 sm:inline-flex"
                   aria-label="Reset zoom"
+                  title="Reset zoom"
                 >
-                  <FiRotateCcw />
+                  <FiRotateCcw className="text-xl" />
                 </button>
-                <button
-                  type="button"
-                  onClick={handleDownloadPreview}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
-                  aria-label="Download media"
-                >
-                  <FiDownload />
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSharePreview}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
-                  aria-label="Share media"
-                >
-                  <FiShare2 />
-                </button>
-                {previewableMedia.length > 1 && (
-                  <span className="min-w-14 text-center text-sm font-medium">
-                    {previewableMedia.findIndex((item) => item.id === previewMedia.id) + 1}/{previewableMedia.length}
-                  </span>
-                )}
-              </div>
-              <div
-                className="relative flex max-h-full max-w-full items-center justify-center overflow-auto rounded-2xl"
-                onClick={(e) => e.stopPropagation()}
-                onWheel={(e) => {
-                  e.preventDefault();
-                  const delta = e.deltaY < 0 ? 0.2 : -0.2;
-                  setPreviewZoom((prev) => clampZoom(prev + delta));
-                }}
-                onTouchStart={(e) => {
-                  if (e.touches.length !== 2) return;
-                  pinchStateRef.current = {
-                    distance: getTouchDistance(e.touches),
-                    zoom: previewZoom,
-                  };
-                }}
-                onTouchMove={(e) => {
-                  if (e.touches.length !== 2 || !pinchStateRef.current) return;
-                  const nextDistance = getTouchDistance(e.touches);
-                  const baseDistance = pinchStateRef.current.distance || nextDistance;
-                  const scaleRatio = nextDistance / baseDistance;
-                  setPreviewZoom(clampZoom(pinchStateRef.current.zoom * scaleRatio));
-                }}
-                onTouchEnd={() => {
-                  pinchStateRef.current = null;
-                }}
+              )}
+              <button
+                type="button"
+                onClick={() => setPreviewMedia(null)}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full transition hover:bg-white/10"
+                aria-label="Close preview"
+                title="Close"
               >
-                {previewableMedia.length > 1 && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => stepPreview(-1)}
-                      className="absolute left-0 top-0 z-[62] h-full w-1/5 cursor-w-resize bg-transparent"
-                      aria-label="Previous media area"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => stepPreview(1)}
-                      className="absolute right-0 top-0 z-[62] h-full w-1/5 cursor-e-resize bg-transparent"
-                      aria-label="Next media area"
-                    />
-                  </>
-                )}
+                <FiX className="text-2xl" />
+              </button>
+            </div>
+          </div>
+
+          <div className="relative min-h-0 flex-1 overflow-hidden">
+            {previewableMedia.length > 1 && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => stepPreview(-1)}
+                  className="absolute left-4 top-1/2 z-[62] inline-flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-white transition hover:bg-black/70 sm:left-9"
+                  aria-label="Previous media"
+                >
+                  <FiChevronLeft className="text-2xl" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => stepPreview(1)}
+                  className="absolute right-4 top-1/2 z-[62] inline-flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-white transition hover:bg-black/70 sm:right-9"
+                  aria-label="Next media"
+                >
+                  <FiChevronRight className="text-2xl" />
+                </button>
+              </>
+            )}
+
+            <div
+              className="flex h-full w-full items-center justify-center overflow-auto px-16 py-6 sm:px-24"
+              onWheel={(e) => {
+                if (previewMedia.type !== "image") return;
+                e.preventDefault();
+                const delta = e.deltaY < 0 ? 0.2 : -0.2;
+                setPreviewZoom((prev) => clampZoom(prev + delta));
+              }}
+              onTouchStart={(e) => {
+                if (previewMedia.type !== "image" || e.touches.length !== 2) return;
+                pinchStateRef.current = {
+                  distance: getTouchDistance(e.touches),
+                  zoom: previewZoom,
+                };
+              }}
+              onTouchMove={(e) => {
+                if (previewMedia.type !== "image" || e.touches.length !== 2 || !pinchStateRef.current) return;
+                const nextDistance = getTouchDistance(e.touches);
+                const baseDistance = pinchStateRef.current.distance || nextDistance;
+                const scaleRatio = nextDistance / baseDistance;
+                setPreviewZoom(clampZoom(pinchStateRef.current.zoom * scaleRatio));
+              }}
+              onTouchEnd={() => {
+                pinchStateRef.current = null;
+              }}
+            >
+              {previewMedia.type === "image" ? (
                 <img
                   src={previewMedia.src}
                   alt="Shared media preview"
-                  className={`max-h-full max-w-full rounded-2xl object-contain shadow-2xl transition-transform duration-150 ${
+                  className={`max-h-full max-w-full object-contain transition-transform duration-150 ${
                     previewZoom > 1 ? "cursor-zoom-out" : "cursor-zoom-in"
                   }`}
                   onClick={(e) => {
@@ -1668,17 +1698,7 @@ export default function HomePage() {
                   }}
                   style={{ transform: `scale(${previewZoom})`, transformOrigin: "center center" }}
                 />
-              </div>
-            </>
-          ) : (
-            <div className="relative flex max-h-[88vh] max-w-[min(92vw,1100px)] flex-col items-center justify-center gap-4">
-              <div
-                className={`flex max-h-[78vh] max-w-full items-center justify-center overflow-hidden bg-black/80 shadow-2xl backdrop-blur-sm ${
-                  isPortraitPreviewVideo
-                    ? "rounded-[32px] border border-white/10 px-3 py-4 sm:px-4 sm:py-5"
-                    : "rounded-[28px] p-2 sm:p-3"
-                }`}
-              >
+              ) : (
                 <video
                   controls
                   autoPlay
@@ -1689,39 +1709,58 @@ export default function HomePage() {
                     setPreviewVideoRatio(videoWidth / videoHeight);
                   }}
                   className={`block bg-black object-contain ${
-                    isPortraitPreviewVideo
-                      ? "max-h-[70vh] w-auto max-w-[82vw] rounded-[26px] sm:max-w-[min(52vw,420px)] lg:max-w-[min(36vw,360px)]"
-                      : "max-h-[72vh] max-w-[min(88vw,920px)] rounded-[22px]"
+                    isPortraitPreviewVideo ? "max-h-full max-w-[min(88vw,430px)]" : "max-h-full max-w-full"
                   }`}
                 >
                   <source src={previewMedia.src} />
                 </video>
-              </div>
-              <div className="z-[61] flex flex-wrap items-center justify-center gap-2 rounded-full bg-white/10 px-3 py-2 text-white backdrop-blur">
-                <button
-                  type="button"
-                  onClick={handleDownloadPreview}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
-                  aria-label="Download media"
-                >
-                  <FiDownload />
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSharePreview}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
-                  aria-label="Share media"
-                >
-                  <FiShare2 />
-                </button>
-                {previewableMedia.length > 1 && (
-                  <span className="min-w-14 text-center text-sm font-medium">
-                    {previewableMedia.findIndex((item) => item.id === previewMedia.id) + 1}/{previewableMedia.length}
-                  </span>
-                )}
-              </div>
+              )}
             </div>
-          )}
+          </div>
+
+          <div className="h-[104px] shrink-0 border-t border-white/10 bg-[#1b1d1c] px-2 py-2">
+            <div className="chat-scroll flex h-full items-center gap-2 overflow-x-auto overflow-y-hidden">
+              {previewableMedia.map((item, index) => {
+                const active = item.id === previewMedia.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => {
+                      setPreviewMedia(item);
+                      setPreviewZoom(1);
+                    }}
+                    className={`relative h-20 w-24 shrink-0 overflow-hidden rounded border-4 bg-black transition ${
+                      active ? "border-emerald-500" : "border-transparent opacity-75 hover:opacity-100"
+                    }`}
+                    aria-label={`Open media ${index + 1}`}
+                  >
+                    {item.type === "image" ? (
+                      <img src={item.src} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      <>
+                        <video className="h-full w-full object-cover">
+                          <source src={item.src} />
+                        </video>
+                        <span className="absolute bottom-1 left-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                          Video
+                        </span>
+                      </>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="pointer-events-none absolute bottom-[116px] left-1/2 hidden -translate-x-1/2 items-center gap-3 rounded-full bg-black/55 px-4 py-2 text-sm font-semibold text-white shadow-2xl sm:flex">
+            <span>{Math.round(previewZoom * 100)}%</span>
+            {previewableMedia.length > 1 && (
+              <span>
+                {previewIndex + 1}/{previewableMedia.length}
+              </span>
+            )}
+          </div>
         </div>
       ) : null}
       </div>
