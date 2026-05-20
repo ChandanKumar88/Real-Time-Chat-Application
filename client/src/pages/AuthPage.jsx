@@ -189,7 +189,7 @@ export default function AuthPage({ mode = "login" }) {
         setAuthBusy(true);
         const nextUser = await setupEncryptionPassphrase(chatPassphrase);
         if (nextUser.encryptionRecoveryRequired) {
-          toast.error("Is account ka chat key backup original browser se create karo.");
+          toast.error("Create this account's chat key backup from the original browser.");
           return;
         }
 
@@ -209,7 +209,7 @@ export default function AuthPage({ mode = "login" }) {
         const result = await verifySignupOtp({ email: otpSentTo, otp, password: form.password });
         toast.success("Account verified");
         if (result.data.user.encryptionRecoveryRequired) {
-          toast.error("Encrypted chat backup original browser se create karo.");
+          toast.error("Create the encrypted chat backup from the original browser.");
         }
         navigate("/");
       } catch (error) {
@@ -239,7 +239,7 @@ export default function AuthPage({ mode = "login" }) {
         const result = await login(form);
         toast.success("Welcome back");
         if (result.data.user.encryptionRecoveryRequired) {
-          toast.error("Encrypted chat backup original browser se create karo.");
+          toast.error("Create the encrypted chat backup from the original browser.");
         }
         navigate("/");
       }
@@ -402,8 +402,8 @@ export default function AuthPage({ mode = "login" }) {
             <>
               <p className="mb-4 text-sm leading-6 text-slate-300">
                 {isGoogleRecoverySetup
-                  ? "Google account ke encrypted messages ko kisi bhi device par open karne ke liye ek chat recovery passphrase set karo."
-                  : "Apna chat recovery passphrase enter karo, phir previous encrypted messages is device par bhi open honge."}
+                  ? "Set a chat recovery passphrase to open your Google account's encrypted messages on any device."
+                  : "Enter your chat recovery passphrase to open previous encrypted messages on this device."}
               </p>
               <input
                 className="mb-3 w-full rounded-md border border-white/25 bg-transparent px-3 py-2 text-slate-100 outline-none transition placeholder:text-slate-400 focus:border-violet-400"

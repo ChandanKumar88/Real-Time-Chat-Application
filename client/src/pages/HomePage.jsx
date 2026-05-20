@@ -502,7 +502,7 @@ export default function HomePage() {
       setRecoveryBusy(true);
       const updatedUser = await setupEncryptionPassphrase(recoveryPassphrase);
       if (updatedUser.encryptionRecoveryRequired || updatedUser.encryptionPassphraseRequired) {
-        toast.error("Original device par pehle chat recovery passphrase set karo.");
+        toast.error("Set the chat recovery passphrase on the original device first.");
         return;
       }
 
@@ -950,8 +950,8 @@ export default function HomePage() {
         >
           <h1 className="text-2xl font-semibold">Unlock encrypted chats</h1>
           <p className={`mt-3 text-sm leading-6 ${theme === "dark" ? "text-slate-300" : "text-slate-600"}`}>
-            Previous messages dekhne ke liye apna chat recovery passphrase enter karo. Agar ye Google account ka first device hai, original
-            Chrome window par pehle passphrase set karo.
+            Enter your chat recovery passphrase to view previous messages. If this is the first device for your Google account, set the
+            passphrase first in the original Chrome window.
           </p>
           <input
             className={`mt-5 w-full rounded-xl border px-3 py-3 outline-none transition focus:border-violet-400 ${

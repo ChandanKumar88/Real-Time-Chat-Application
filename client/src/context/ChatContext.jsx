@@ -611,7 +611,7 @@ export function ChatProvider({ children }) {
 
   async function sendMessage(targetUserId, payload) {
     if (user.encryptionPassphraseRequired) {
-      throw new Error("Chat recovery passphrase enter karke encrypted chats unlock karo.");
+      throw new Error("Enter your chat recovery passphrase to unlock encrypted chats.");
     }
 
     const targetUser = users.find((u) => u._id === targetUserId) || selectedUserRef.current;
@@ -620,7 +620,7 @@ export function ChatProvider({ children }) {
     }
     const localKeyPair = getLocalKeyPair(user._id);
     if (payload.text && user.publicKey && localKeyPair?.publicKey !== user.publicKey) {
-      throw new Error("Encrypted chat key backup original browser se create karo.");
+      throw new Error("Create the encrypted chat key backup from the original browser.");
     }
 
     const tempId = `temp-${Date.now()}`;

@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import toast from "react-hot-toast";
 import {
   FiCheckSquare,
@@ -95,6 +96,7 @@ export default function ChatContainer({
   const pendingOlderScrollRef = useRef(null);
   const [mediaError, setMediaError] = useState("");
   const [openMenuId, setOpenMenuId] = useState("");
+  const [menuPosition, setMenuPosition] = useState(null);
   const [swipeState, setSwipeState] = useState(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [isUserNearBottom, setIsUserNearBottom] = useState(true);
@@ -128,6 +130,10 @@ export default function ChatContainer({
   const selectedForwardOwnMessages = useMemo(
     () => selectedForwardMessages.filter((message) => message.senderId === user?._id && !message.pending),
     [selectedForwardMessages, user?._id]
+  );
+  const activeMenuMessage = useMemo(
+    () => messages.find((message) => message._id === openMenuId) || null,
+    [messages, openMenuId]
   );
 
   function getIsNearBottom() {
@@ -247,6 +253,7 @@ export default function ChatContainer({
         return;
       }
       setOpenMenuId("");
+      setMenuPosition(null);
     }
 
     function handleKeyDown(event) {
@@ -358,6 +365,7 @@ export default function ChatContainer({
   function selectReply(message) {
     onReplyMessage?.(message);
     setOpenMenuId("");
+    setMenuPosition(null);
     window.setTimeout(() => textInputRef.current?.focus(), 0);
   }
 
@@ -424,6 +432,7 @@ export default function ChatContainer({
       toast.error(message?.image ? "Image copy nahi ho paayi." : "Message copy nahi ho paaya.");
     } finally {
       setOpenMenuId("");
+      setMenuPosition(null);
     }
   }
 
@@ -466,6 +475,7 @@ export default function ChatContainer({
   function startForwardMode(message) {
     if (!message?._id) return;
     setOpenMenuId("");
+    setMenuPosition(null);
     setIsForwardMode(true);
     setSelectedForwardMessageIds([message._id]);
     setIsForwardModalOpen(false);
@@ -592,6 +602,13 @@ export default function ChatContainer({
       ignoreNextDocumentClickRef.current = true;
       setSwipeState(null);
       setOpenMenuId(message._id);
+      setMenuPosition(
+        getSmartMenuPosition({
+          point: { x: touch.clientX, y: touch.clientY },
+          isMine: message.senderId === user?._id,
+          hasDelete: message.senderId === user?._id && !message.pending,
+        })
+      );
       navigator.vibrate?.(20);
     }, 550);
     setSwipeState({ id: message._id, startX: touch.clientX, startY: touch.clientY, offset: 0 });
@@ -643,15 +660,42 @@ export default function ChatContainer({
     setSwipeState(null);
   }
 
+  function getSmartMenuPosition({ rect, point, isMine, hasDelete }) {
+    const menuWidth = 224;
+    const menuHeight = hasDelete ? 216 : 176;
+    const gutter = 10;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const anchorTop = rect?.top ?? point?.y ?? gutter;
+    const anchorBottom = rect?.bottom ?? point?.y ?? anchorTop;
+    const anchorLeft = rect?.left ?? point?.x ?? gutter;
+    const anchorRight = rect?.right ?? point?.x ?? anchorLeft;
+    const spaceBelow = viewportHeight - anchorBottom;
+    const spaceAbove = anchorTop;
+    const shouldOpenBelow = spaceBelow >= menuHeight + gutter || spaceBelow >= spaceAbove;
+    const rawTop = shouldOpenBelow ? anchorBottom + gutter : anchorTop - menuHeight - gutter;
+    const rawLeft = isMine ? anchorRight - menuWidth : anchorLeft;
+
+    return {
+      top: Math.min(Math.max(gutter, rawTop), Math.max(gutter, viewportHeight - menuHeight - gutter)),
+      left: Math.min(Math.max(gutter, rawLeft), Math.max(gutter, viewportWidth - menuWidth - gutter)),
+      width: menuWidth,
+    };
+  }
+
   function openMessageMenu(message, event, isMine) {
     event.preventDefault();
     event.stopPropagation();
 
     if (openMenuId === message._id) {
       setOpenMenuId("");
+      setMenuPosition(null);
       return;
     }
 
+    const anchor = event.currentTarget.closest("[data-message-bubble='true']") || event.currentTarget;
+    const rect = anchor.getBoundingClientRect();
+    setMenuPosition(getSmartMenuPosition({ rect, isMine, hasDelete: isMine && !message.pending }));
     setOpenMenuId(message._id);
   }
 
@@ -849,6 +893,14 @@ export default function ChatContainer({
                 style={{ transform: swipeOffset ? `translateX(${swipeOffset}px)` : undefined }}
               >
                 <div
+                  data-message-bubble="true"
+                  onClick={(event) => {
+                    if (isForwardMode) return;
+                    if (event.target.closest("[data-message-menu='true']") || event.target.closest("[data-menu-control='true']")) {
+                      return;
+                    }
+                    openMessageMenu(m, event, isMine);
+                  }}
                   className={`group relative max-w-full rounded-2xl px-2.5 py-2 transition sm:px-3 ${
                     isMine ? "bg-violet-600 text-white" : isDark ? "bg-white/10 text-slate-100" : "bg-slate-100 text-slate-800"
                   } ${matchesSearch ? (isActiveSearchMatch ? "ring-2 ring-amber-300/90" : "ring-1 ring-amber-300/45") : ""} ${
@@ -857,7 +909,7 @@ export default function ChatContainer({
                 >
                   <button
                     type="button"
-                    title="Message options"
+                    data-menu-control="true"
                     onClick={(event) => {
                       openMessageMenu(m, event, isMine);
                     }}
@@ -868,114 +920,6 @@ export default function ChatContainer({
                   >
                     <FiChevronDown />
                   </button>
-                  {openMenuId === m._id && (
-                    <>
-                      <div
-                        onClick={(event) => event.stopPropagation()}
-                        className={`fixed bottom-[84px] left-3 right-3 z-50 overflow-hidden rounded-2xl border py-1.5 text-sm shadow-2xl backdrop-blur-md sm:hidden ${
-                          isDark ? "border-white/10 bg-[#15151c] text-slate-100" : "border-slate-200 bg-white text-slate-800"
-                        }`}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => selectReply(m)}
-                          className={`flex w-full items-center gap-3 whitespace-nowrap px-3.5 py-2.5 text-left font-medium ${isDark ? "hover:bg-white/10" : "hover:bg-slate-100"}`}
-                        >
-                          <FiCornerUpLeft className="h-4 w-4 shrink-0" />
-                          Reply
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => copyMessage(m)}
-                          className={`flex w-full items-center gap-3 whitespace-nowrap px-3.5 py-2.5 text-left font-medium ${isDark ? "hover:bg-white/10" : "hover:bg-slate-100"}`}
-                        >
-                          <FiCopy className="h-4 w-4 shrink-0" />
-                          Copy
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => startForwardMode(m)}
-                          className={`flex w-full items-center gap-3 whitespace-nowrap px-3.5 py-2.5 text-left font-medium ${isDark ? "hover:bg-white/10" : "hover:bg-slate-100"}`}
-                        >
-                          <FiShare2 className="h-4 w-4 shrink-0" />
-                          Forward
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => startForwardMode(m)}
-                          className={`flex w-full items-center gap-3 whitespace-nowrap px-3.5 py-2.5 text-left font-medium ${isDark ? "hover:bg-white/10" : "hover:bg-slate-100"}`}
-                        >
-                          <FiCheckSquare className="h-4 w-4 shrink-0" />
-                          Select
-                        </button>
-                        {isMine && !m.pending && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setOpenMenuId("");
-                              onDeleteMessage?.(m._id);
-                            }}
-                            className={`flex w-full items-center gap-3 whitespace-nowrap px-3.5 py-2.5 text-left font-medium ${isDark ? "hover:bg-white/10" : "hover:bg-slate-100"}`}
-                          >
-                            <FiTrash2 className="h-4 w-4 shrink-0" />
-                            Delete
-                          </button>
-                        )}
-                      </div>
-                      <div
-                        onClick={(event) => event.stopPropagation()}
-                        className={`absolute bottom-[calc(100%+6px)] z-50 hidden max-h-[min(72vh,420px)] overflow-y-auto rounded-xl border py-1.5 text-sm shadow-2xl backdrop-blur-md sm:block ${
-                          isMine ? "right-0 w-56" : "left-0 w-56"
-                        } ${isDark ? "border-white/10 bg-[#15151c] text-slate-100" : "border-slate-200 bg-white text-slate-800"}`}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => selectReply(m)}
-                          className={`flex w-full items-center gap-3 whitespace-nowrap px-3.5 py-2.5 text-left font-medium ${isDark ? "hover:bg-white/10" : "hover:bg-slate-100"}`}
-                        >
-                          <FiCornerUpLeft className="h-4 w-4 shrink-0" />
-                          Reply
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => copyMessage(m)}
-                          className={`flex w-full items-center gap-3 whitespace-nowrap px-3.5 py-2.5 text-left font-medium ${isDark ? "hover:bg-white/10" : "hover:bg-slate-100"}`}
-                        >
-                          <FiCopy className="h-4 w-4 shrink-0" />
-                          Copy
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => startForwardMode(m)}
-                          className={`flex w-full items-center gap-3 whitespace-nowrap px-3.5 py-2.5 text-left font-medium ${isDark ? "hover:bg-white/10" : "hover:bg-slate-100"}`}
-                        >
-                          <FiShare2 className="h-4 w-4 shrink-0" />
-                          Forward
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => startForwardMode(m)}
-                          className={`flex w-full items-center gap-3 whitespace-nowrap px-3.5 py-2.5 text-left font-medium ${isDark ? "hover:bg-white/10" : "hover:bg-slate-100"}`}
-                        >
-                          <FiCheckSquare className="h-4 w-4 shrink-0" />
-                          Select
-                        </button>
-                        {isMine && !m.pending && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setOpenMenuId("");
-                              onDeleteMessage?.(m._id);
-                            }}
-                            className={`flex w-full items-center gap-3 whitespace-nowrap px-3.5 py-2.5 text-left font-medium ${isDark ? "hover:bg-white/10" : "hover:bg-slate-100"}`}
-                          >
-                            <FiTrash2 className="h-4 w-4 shrink-0" />
-                            Delete
-                          </button>
-                        )}
-                      </div>
-                    </>
-                  )}
                   {isForwardedMessage && (
                     <p
                       className={`mb-1 flex items-center gap-1 text-left text-[12px] italic leading-none ${
@@ -1009,6 +953,7 @@ export default function ChatContainer({
                   {!!m.text && <p className="break-words text-sm">{getHighlightedText(m.text)}</p>}
                   {!!m.image && (
                     <div
+                      data-media-preview="true"
                       role="button"
                       tabIndex={0}
                       onClick={(event) => {
@@ -1017,21 +962,29 @@ export default function ChatContainer({
                           toggleForwardMessage(m._id);
                           return;
                         }
+                        openMessageMenu(m, event, isMine);
+                      }}
+                      onDoubleClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setOpenMenuId("");
+                        setMenuPosition(null);
                         onPreviewMedia?.({ id: m._id, type: "image", src: m.image });
                       }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
-                          onPreviewMedia?.({ id: m._id, type: "image", src: m.image });
+                          openMessageMenu(m, e, isMine);
                         }
                       }}
-                      className="mt-2 block max-w-full cursor-zoom-in"
+                      className="mt-2 block max-w-full cursor-pointer"
                     >
                       <img src={m.image} className="block max-h-56 w-full max-w-[min(58vw,240px)] rounded-xl object-cover sm:max-h-64 sm:max-w-full" />
                     </div>
                   )}
                   {!!m.video && (
                     <div
+                      data-media-preview="true"
                       role="button"
                       tabIndex={0}
                       onClick={(event) => {
@@ -1040,15 +993,22 @@ export default function ChatContainer({
                           toggleForwardMessage(m._id);
                           return;
                         }
+                        openMessageMenu(m, event, isMine);
+                      }}
+                      onDoubleClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setOpenMenuId("");
+                        setMenuPosition(null);
                         onPreviewMedia?.({ id: m._id, type: "video", src: m.video });
                       }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
-                          onPreviewMedia?.({ id: m._id, type: "video", src: m.video });
+                          openMessageMenu(m, e, isMine);
                         }
                       }}
-                      className="mt-2 block max-w-full cursor-zoom-in"
+                      className="mt-2 block max-w-full cursor-pointer"
                     >
                       <video className="block max-h-56 w-full max-w-[min(58vw,240px)] rounded-xl object-cover sm:max-h-64 sm:max-w-full" muted playsInline>
                         <source src={m.video} />
@@ -1068,6 +1028,65 @@ export default function ChatContainer({
         })}
         </div>
       </div>
+
+      {activeMenuMessage && menuPosition && typeof document !== "undefined" && createPortal(
+        <div
+          data-message-menu="true"
+          onClick={(event) => event.stopPropagation()}
+          style={{ top: menuPosition.top, left: menuPosition.left, width: menuPosition.width }}
+          className={`fixed z-[120] max-h-[min(72vh,420px)] overflow-y-auto rounded-xl border py-1.5 text-sm shadow-2xl backdrop-blur-md ${
+            isDark ? "border-white/10 bg-[#15151c] text-slate-100" : "border-slate-200 bg-white text-slate-800"
+          }`}
+        >
+          <button
+            type="button"
+            onClick={() => selectReply(activeMenuMessage)}
+            className={`flex w-full items-center gap-3 whitespace-nowrap px-3.5 py-2.5 text-left font-medium ${isDark ? "hover:bg-white/10" : "hover:bg-slate-100"}`}
+          >
+            <FiCornerUpLeft className="h-4 w-4 shrink-0" />
+            Reply
+          </button>
+          <button
+            type="button"
+            onClick={() => copyMessage(activeMenuMessage)}
+            className={`flex w-full items-center gap-3 whitespace-nowrap px-3.5 py-2.5 text-left font-medium ${isDark ? "hover:bg-white/10" : "hover:bg-slate-100"}`}
+          >
+            <FiCopy className="h-4 w-4 shrink-0" />
+            Copy
+          </button>
+          <button
+            type="button"
+            onClick={() => startForwardMode(activeMenuMessage)}
+            className={`flex w-full items-center gap-3 whitespace-nowrap px-3.5 py-2.5 text-left font-medium ${isDark ? "hover:bg-white/10" : "hover:bg-slate-100"}`}
+          >
+            <FiShare2 className="h-4 w-4 shrink-0" />
+            Forward
+          </button>
+          <button
+            type="button"
+            onClick={() => startForwardMode(activeMenuMessage)}
+            className={`flex w-full items-center gap-3 whitespace-nowrap px-3.5 py-2.5 text-left font-medium ${isDark ? "hover:bg-white/10" : "hover:bg-slate-100"}`}
+          >
+            <FiCheckSquare className="h-4 w-4 shrink-0" />
+            Select
+          </button>
+          {activeMenuMessage.senderId === user?._id && !activeMenuMessage.pending && (
+            <button
+              type="button"
+              onClick={() => {
+                setOpenMenuId("");
+                setMenuPosition(null);
+                onDeleteMessage?.(activeMenuMessage._id);
+              }}
+              className={`flex w-full items-center gap-3 whitespace-nowrap px-3.5 py-2.5 text-left font-medium ${isDark ? "hover:bg-white/10" : "hover:bg-slate-100"}`}
+            >
+              <FiTrash2 className="h-4 w-4 shrink-0" />
+              Delete
+            </button>
+          )}
+        </div>,
+        document.body
+      )}
 
       {showScrollButton && (
         <button

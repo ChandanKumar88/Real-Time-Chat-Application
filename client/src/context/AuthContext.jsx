@@ -131,7 +131,7 @@ export function AuthProvider({ children }) {
   const setupEncryptionPassphrase = useCallback(async (passphrase) => {
     if (!user?._id) throw new Error("Login first");
     if (!passphrase || passphrase.length < 8) {
-      throw new Error("Chat recovery passphrase kam se kam 8 characters ka rakho");
+      throw new Error("Chat recovery passphrase must be at least 8 characters long");
     }
 
     const nextUser = await syncRecoverableEncryptionKey(user, passphrase);
