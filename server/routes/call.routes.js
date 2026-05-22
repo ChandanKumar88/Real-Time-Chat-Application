@@ -6,6 +6,7 @@ const {
   sendIceCandidate,
   rejectCall,
   endCall,
+  logCallMessage,
   listCallEvents,
 } = require("../controllers/call.controller");
 
@@ -18,5 +19,6 @@ router.post("/accept", acceptCall);
 router.post("/ice", sendIceCandidate);
 router.post("/reject", rejectCall);
 router.post("/end", endCall);
+router.post("/log", logCallMessage);
 
 module.exports = router;

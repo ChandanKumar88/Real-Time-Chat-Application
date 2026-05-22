@@ -320,6 +320,7 @@ export default function ChatContainer({
   function getMessagePreview(message) {
     if (!message) return "Original message";
     if (message.decryptionFailed) return "Message can't be opened on this device";
+    if (message.callType) return message.callType === "video" ? "Video call" : "Voice call";
     if (message.text) return message.text;
     if (message.image) return "Photo";
     if (message.video) return "Video";
@@ -575,10 +576,21 @@ export default function ChatContainer({
   function getForwardPreview(message) {
     if (!message) return "Message";
     if (message.decryptionFailed) return "Locked message";
+    if (message.callType) return message.callType === "video" ? "Video call" : "Voice call";
     if (message.text) return message.text;
     if (message.image) return "Photo";
     if (message.video) return "Video";
     return "Message";
+  }
+
+  function formatCallMessageDuration(seconds = 0, status = "") {
+    const safeSeconds = Math.max(0, Math.floor(Number(seconds) || 0));
+    if (status === "missed" && safeSeconds === 0) return "Missed";
+    if (safeSeconds < 60) return `${safeSeconds} second${safeSeconds === 1 ? "" : "s"}`;
+    const minutes = Math.floor(safeSeconds / 60);
+    const remainingSeconds = safeSeconds % 60;
+    if (!remainingSeconds) return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+    return `${minutes} minute${minutes === 1 ? "" : "s"} ${remainingSeconds} second${remainingSeconds === 1 ? "" : "s"}`;
   }
 
   function clearLongPressTimer() {
@@ -844,6 +856,7 @@ export default function ChatContainer({
           const isActiveSearchMatch = activeSearchMessageId === m._id;
           const isForwardSelected = selectedForwardMessageIds.includes(m._id);
           const isForwardedMessage = Boolean(m.isForwarded || m.originalMessageId || m.forwardedFrom);
+          const isCallMessage = Boolean(m.callType);
           return (
             <div
               key={m._id}
@@ -902,7 +915,15 @@ export default function ChatContainer({
                     openMessageMenu(m, event, isMine);
                   }}
                   className={`group relative max-w-full rounded-2xl px-2.5 py-2 transition sm:px-3 ${
-                    isMine ? "bg-violet-600 text-white" : isDark ? "bg-white/10 text-slate-100" : "bg-slate-100 text-slate-800"
+                    isCallMessage
+                      ? isDark
+                        ? "bg-[#202126] text-slate-100"
+                        : "bg-slate-100 text-slate-800"
+                      : isMine
+                        ? "bg-violet-600 text-white"
+                        : isDark
+                          ? "bg-white/10 text-slate-100"
+                          : "bg-slate-100 text-slate-800"
                   } ${matchesSearch ? (isActiveSearchMatch ? "ring-2 ring-amber-300/90" : "ring-1 ring-amber-300/45") : ""} ${
                     isForwardSelected ? "ring-2 ring-emerald-400/80" : ""
                   }`}
@@ -934,6 +955,27 @@ export default function ChatContainer({
                     <div className={`mb-2 max-w-[min(70vw,320px)] rounded-xl border-l-2 px-2.5 py-2 text-xs ${isMine ? "border-white/70 bg-black/15 text-white/90" : isDark ? "border-violet-300 bg-black/25 text-slate-200" : "border-violet-500 bg-white/80 text-slate-700"}`}>
                       <p className={`truncate font-semibold ${isMine ? "text-white" : "text-violet-300"}`}>{getMessageAuthor(repliedMessage)}</p>
                       <p className="line-clamp-2 break-words opacity-85">{getMessagePreview(repliedMessage)}</p>
+                    </div>
+                  )}
+                  {!!m.callType && (
+                    <div className="flex min-w-[230px] items-center gap-3 pr-2 sm:min-w-[270px]">
+                      <span
+                        className={`grid h-12 w-12 shrink-0 place-items-center rounded-full ${
+                          m.callStatus === "missed"
+                            ? "bg-rose-500/15 text-rose-300"
+                            : isDark
+                              ? "bg-white/10 text-slate-100"
+                              : "bg-slate-200 text-slate-700"
+                        }`}
+                      >
+                        <FiPhone className="h-5 w-5" />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-base font-semibold">{m.callType === "video" ? "Video call" : "Voice call"}</span>
+                        <span className={`block truncate text-sm ${m.callStatus === "missed" ? "text-rose-300" : isDark ? "text-slate-300" : "text-slate-500"}`}>
+                          {formatCallMessageDuration(m.callDurationSeconds, m.callStatus)}
+                        </span>
+                      </span>
                     </div>
                   )}
                   {m.decryptionFailed && (

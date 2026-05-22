@@ -1,6 +1,8 @@
 const crypto = require("crypto");
 const mongoose = require("mongoose");
 const CallEvent = require("../models/CallEvent");
+const Message = require("../models/Message");
+const { getSocketIdsByUserId } = require("../socket/presenceStore");
 
 const CALL_EVENT_TTL_MS = 2 * 60 * 1000;
 
@@ -56,6 +58,51 @@ async function endCall(req, res) {
   return createCallEvent(req, res, "end");
 }
 
+async function logCallMessage(req, res) {
+  const { peerId, callerId, callId, callType = "audio", callStatus = "outgoing", callDurationSeconds = 0 } = req.body || {};
+
+  if (!peerId || !isValidUserId(peerId)) {
+    return res.status(400).json({ success: false, message: "Invalid call peer" });
+  }
+  if (!callerId || !isValidUserId(callerId)) {
+    return res.status(400).json({ success: false, message: "Invalid call sender" });
+  }
+  if (![req.user.id, peerId].includes(callerId)) {
+    return res.status(403).json({ success: false, message: "Invalid call participant" });
+  }
+  if (!["audio", "video"].includes(callType)) {
+    return res.status(400).json({ success: false, message: "Invalid call type" });
+  }
+  if (!["outgoing", "received", "missed"].includes(callStatus)) {
+    return res.status(400).json({ success: false, message: "Invalid call status" });
+  }
+
+  const receiverId = callerId === req.user.id ? peerId : req.user.id;
+  const safeDurationSeconds = Math.max(0, Math.floor(Number(callDurationSeconds) || 0));
+  const safeCallId = callId || crypto.randomUUID();
+  let message = await Message.findOne({ callId: safeCallId, callType });
+
+  if (!message) {
+    message = await Message.create({
+      senderId: callerId,
+      receiverId,
+      callId: safeCallId,
+      callType,
+      callStatus,
+      callDurationSeconds: safeDurationSeconds,
+    });
+
+    const io = req.app.get("io");
+    const participantIds = new Set([callerId, receiverId]);
+    participantIds.forEach((participantId) => {
+      const socketIds = getSocketIdsByUserId(participantId);
+      if (socketIds.length > 0) io.to(socketIds).emit("message:new", message);
+    });
+  }
+
+  res.status(201).json({ success: true, data: message });
+}
+
 async function listCallEvents(req, res) {
   const since = req.query.since ? new Date(req.query.since) : new Date(Date.now() - CALL_EVENT_TTL_MS);
   const safeSince = Number.isNaN(since.getTime()) ? new Date(Date.now() - CALL_EVENT_TTL_MS) : since;
@@ -79,5 +126,6 @@ module.exports = {
   sendIceCandidate,
   rejectCall,
   endCall,
+  logCallMessage,
   listCallEvents,
 };

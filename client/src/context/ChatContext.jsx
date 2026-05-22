@@ -671,6 +671,18 @@ export function ChatProvider({ children }) {
     }
   }
 
+  async function recordCallMessage(targetUserId, payload = {}) {
+    if (!targetUserId) return null;
+
+    const { data } = await api.post("/calls/log", {
+      peerId: targetUserId,
+      ...payload,
+    });
+    const callMessage = data.data;
+    updateConversationMessages(targetUserId, (prev) => mergeMessagesById(prev, [callMessage]));
+    return callMessage;
+  }
+
   async function markSeen(messageId) {
     await api.patch(`/messages/${messageId}/seen`);
   }
@@ -756,6 +768,7 @@ export function ChatProvider({ children }) {
       messagesLoading,
       loadOlderMessages,
       sendMessage,
+      recordCallMessage,
       markSeen,
       deleteMessage,
       clearConversation,

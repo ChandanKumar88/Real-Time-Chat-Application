@@ -204,13 +204,28 @@ export default function AuthPage({ mode = "login" }) {
     }
 
     if (showOtpStep) {
+      if (chatPassphrase.length < 8) {
+        toast.error("Chat recovery passphrase must be at least 8 characters long");
+        return;
+      }
+
+      if (chatPassphrase !== confirmChatPassphrase) {
+        toast.error("Chat recovery passphrase does not match");
+        return;
+      }
+
       try {
         setAuthBusy(true);
         const result = await verifySignupOtp({ email: otpSentTo, otp, password: form.password });
-        toast.success("Account verified");
-        if (result.data.user.encryptionRecoveryRequired) {
+        const updatedUser = await setupEncryptionPassphrase(chatPassphrase, result.data.user);
+        if (updatedUser.encryptionRecoveryRequired || updatedUser.encryptionPassphraseRequired) {
           toast.error("Create the encrypted chat backup from the original browser.");
+          return;
         }
+
+        toast.success("Account verified and chat recovery passphrase set");
+        setChatPassphrase("");
+        setConfirmChatPassphrase("");
         navigate("/");
       } catch (error) {
         const message =
@@ -227,6 +242,16 @@ export default function AuthPage({ mode = "login" }) {
     if (isSignup && !acceptTerms) {
       toast.error("Please accept terms and privacy policy");
       return;
+    }
+    if (isSignup) {
+      if (chatPassphrase.length < 8) {
+        toast.error("Chat recovery passphrase must be at least 8 characters long");
+        return;
+      }
+      if (chatPassphrase !== confirmChatPassphrase) {
+        toast.error("Chat recovery passphrase does not match");
+        return;
+      }
     }
     try {
       setAuthBusy(true);
@@ -507,9 +532,36 @@ export default function AuthPage({ mode = "login" }) {
             value={form.password}
             onChange={(e) => setForm({ ...form, password: e.target.value })}
           />
+          {isSignup && !showForgotPassword && !googleRecoveryUser && !showOtpStep && (
+            <>
+              <p className="mb-3 text-xs leading-5 text-slate-300">
+                Set a chat recovery passphrase. You will need it to unlock old encrypted chats on another device.
+              </p>
+              <input
+                className="mb-3 w-full rounded-md border border-white/25 bg-transparent px-3 py-2 text-slate-100 outline-none transition placeholder:text-slate-400 focus:border-violet-400"
+                placeholder="Chat recovery passphrase"
+                type="password"
+                value={chatPassphrase}
+                onChange={(e) => setChatPassphrase(e.target.value)}
+              />
+              <input
+                className="mb-4 w-full rounded-md border border-white/25 bg-transparent px-3 py-2 text-slate-100 outline-none transition placeholder:text-slate-400 focus:border-violet-400"
+                placeholder="Confirm chat recovery passphrase"
+                type="password"
+                value={confirmChatPassphrase}
+                onChange={(e) => setConfirmChatPassphrase(e.target.value)}
+              />
+            </>
+          )}
           <button
             className={`w-full rounded-md bg-gradient-to-r from-violet-500 to-fuchsia-500 py-2.5 font-medium text-white transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-70 ${showForgotPassword || googleRecoveryUser ? "hidden" : ""}`}
-            disabled={authBusy || (showOtpStep && otp.length !== 6)}
+            disabled={
+              authBusy ||
+              (showOtpStep && otp.length !== 6) ||
+              (!showOtpStep &&
+                isSignup &&
+                (chatPassphrase.length < 8 || confirmChatPassphrase.length < 8 || chatPassphrase !== confirmChatPassphrase))
+            }
           >
             {authBusy ? "Please wait..." : showOtpStep ? "Verify & Create Account" : isSignup ? "Send OTP" : "Login"}
           </button>
@@ -577,6 +629,8 @@ export default function AuthPage({ mode = "login" }) {
               setIsSignup((s) => !s);
               setOtpSentTo("");
               setOtp("");
+              setChatPassphrase("");
+              setConfirmChatPassphrase("");
             }}
             className={`mt-4 text-xs text-slate-300 ${showForgotPassword || googleRecoveryUser ? "hidden" : ""}`}
           >

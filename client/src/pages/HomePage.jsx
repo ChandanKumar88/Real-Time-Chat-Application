@@ -68,6 +68,7 @@ export default function HomePage() {
     clearConversation,
     deleteConversation,
     blockUser,
+    recordCallMessage,
     typingUsers,
     emitTyping,
     stopTyping,
@@ -194,6 +195,7 @@ export default function HomePage() {
 
           let previewText = "Message";
           if (lastMessage.decryptionFailed) previewText = "Message can't be opened";
+          else if (lastMessage.callType) previewText = "Voice call";
           else if (lastMessage.text) previewText = lastMessage.text;
           else if (lastMessage.image) previewText = "Photo";
           else if (lastMessage.video) previewText = "Video";
@@ -409,6 +411,11 @@ export default function HomePage() {
     return `${minutes}:${String(seconds).padStart(2, "0")}`;
   }
 
+  function getCallDurationSeconds(startedAt) {
+    if (!startedAt) return 0;
+    return Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+  }
+
   function getCallStatusText() {
     if (callState.status === "ringing") return "Incoming audio call";
     if (callState.status === "calling") return "Calling...";
@@ -476,6 +483,24 @@ export default function HomePage() {
           : item
       )
     );
+  }
+
+  function saveCallMessage(status) {
+    const peer = callStateRef.current.peer;
+    const peerId = peer?._id || callPeerIdRef.current;
+    if (!peerId || !callIdRef.current) return;
+
+    const direction = callStateRef.current.direction;
+    const callerId = direction === "incoming" ? peerId : user._id;
+    const durationSeconds = status === "missed" ? 0 : getCallDurationSeconds(callStateRef.current.startedAt);
+
+    recordCallMessage(peerId, {
+      callerId,
+      callId: callIdRef.current,
+      callType: "audio",
+      callStatus: status,
+      callDurationSeconds: durationSeconds,
+    }).catch(() => null);
   }
 
   function handleStartVideoCall() {
@@ -784,13 +809,16 @@ export default function HomePage() {
     const peerId = callPeerIdRef.current;
     if (callStateRef.current.direction === "incoming") {
       rememberCall(callStateRef.current.peer, "missed");
+      saveCallMessage("missed");
     }
     if (peerId) sendCallSignal("reject", peerId, { reason: "rejected" }).catch(() => null);
     resetCall();
   }
 
   function endAudioCall() {
-    completeCurrentCallHistory(callStateRef.current.direction === "incoming" ? "received" : "outgoing");
+    const status = callStateRef.current.direction === "incoming" ? "received" : "outgoing";
+    completeCurrentCallHistory(status);
+    saveCallMessage(status);
     notifyCallEnd();
     resetCall();
   }
@@ -862,6 +890,7 @@ export default function HomePage() {
     if (event.type === "reject") {
       const message = payload.reason === "busy" ? "User dusri call mein busy hai." : "Audio call reject ho gayi.";
       completeCurrentCallHistory("outgoing");
+      saveCallMessage("outgoing");
       resetCall();
       toast.error(message);
       return;
@@ -870,8 +899,11 @@ export default function HomePage() {
     if (event.type === "end" && callStateRef.current.status !== "idle") {
       if (callStateRef.current.status === "ringing" && callStateRef.current.direction === "incoming") {
         rememberCall(callStateRef.current.peer, "missed");
+        saveCallMessage("missed");
       } else {
-        completeCurrentCallHistory(callStateRef.current.direction === "incoming" ? "received" : "outgoing");
+        const status = callStateRef.current.direction === "incoming" ? "received" : "outgoing";
+        completeCurrentCallHistory(status);
+        saveCallMessage(status);
       }
       resetCall();
       toast("Audio call ended");
@@ -950,8 +982,8 @@ export default function HomePage() {
         >
           <h1 className="text-2xl font-semibold">Unlock encrypted chats</h1>
           <p className={`mt-3 text-sm leading-6 ${theme === "dark" ? "text-slate-300" : "text-slate-600"}`}>
-            Enter your chat recovery passphrase to view previous messages. If this is the first device for your Google account, set the
-            passphrase first in the original Chrome window.
+            Enter your chat recovery passphrase to view previous messages. If this is your first device, set the passphrase first in the
+            original browser.
           </p>
           <input
             className={`mt-5 w-full rounded-xl border px-3 py-3 outline-none transition focus:border-violet-400 ${
@@ -1230,56 +1262,6 @@ export default function HomePage() {
       )}
 
       <div className={`flex min-h-0 h-full flex-col lg:col-span-8 ${isDesktopRightPanelOpen ? "xl:col-span-6" : "xl:col-span-9"}`}>
-        <div
-          className={`${
-            activeDesktopTab === "calls" ? "hidden lg:flex" : "hidden"
-          } h-full min-h-0 flex-col items-center justify-center rounded-2xl p-8 text-center shadow-2xl backdrop-blur-md ${
-            theme === "dark" ? "border border-white/20 bg-black/35" : "border border-slate-200/80 bg-white/75"
-          }`}
-        >
-          <div className="mb-6 grid h-20 w-20 place-items-center rounded-3xl bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white shadow-xl shadow-fuchsia-900/20">
-            <FiPhone className="text-3xl" />
-          </div>
-          <h2 className={`text-2xl font-semibold ${theme === "dark" ? "text-slate-100" : "text-slate-900"}`}>Calls</h2>
-          <p className={`mt-2 max-w-md text-sm leading-6 ${theme === "dark" ? "text-slate-400" : "text-slate-600"}`}>
-            Select a recent call from the left panel or start a new call from an open chat.
-          </p>
-          <div className="mt-7 grid w-full max-w-xl grid-cols-2 gap-3">
-            {[
-              { label: "Start call", icon: FiPhone },
-              { label: "New call link", icon: FiPlus },
-              { label: "Call a number", icon: FiMoreHorizontal },
-              { label: "Schedule call", icon: FiVideo },
-            ].map((item) => {
-              const Icon = item.icon;
-              return (
-                <button
-                  key={item.label}
-                  type="button"
-                  className={`flex items-center gap-3 rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition ${
-                    theme === "dark"
-                      ? "border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
-                      : "border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-100"
-                  }`}
-                >
-                  <span
-                    className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${
-                      theme === "dark" ? "bg-violet-500/20 text-violet-200" : "bg-violet-100 text-violet-700"
-                    }`}
-                  >
-                    <Icon />
-                  </span>
-                  {item.label}
-                </button>
-              );
-            })}
-          </div>
-          <p className={`mt-8 inline-flex items-center gap-2 text-xs ${theme === "dark" ? "text-slate-500" : "text-slate-500"}`}>
-            <FiLock />
-            Your personal calls are end-to-end encrypted
-          </p>
-        </div>
-
         <div className={`${activeDesktopTab === "calls" ? "flex lg:hidden" : "flex"} min-h-0 h-full flex-col`}>
         {isCallOpen && isCallMinimized && (
           <div

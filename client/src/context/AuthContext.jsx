@@ -91,19 +91,27 @@ export function AuthProvider({ children }) {
     const { data } = await api.post("/auth/signup/verify", payload);
     endManualLogout();
     localStorage.setItem("chat_token", data.data.token);
-    const nextUser = await syncRecoverableEncryptionKey(data.data.user, payload.password);
+    const nextUser = {
+      ...data.data.user,
+      encryptionPassphraseRequired: needsRecoveryPassphrase(data.data.user),
+      encryptionRecoveryRequired: false,
+    };
     setUser(nextUser);
     return { ...data, data: { ...data.data, user: nextUser } };
-  }, [syncRecoverableEncryptionKey]);
+  }, []);
 
   const login = useCallback(async (payload) => {
     const { data } = await api.post("/auth/login", payload);
     endManualLogout();
     localStorage.setItem("chat_token", data.data.token);
-    const nextUser = await syncRecoverableEncryptionKey(data.data.user, payload.password);
+    const nextUser = {
+      ...data.data.user,
+      encryptionPassphraseRequired: needsRecoveryPassphrase(data.data.user),
+      encryptionRecoveryRequired: false,
+    };
     setUser(nextUser);
     return { ...data, data: { ...data.data, user: nextUser } };
-  }, [syncRecoverableEncryptionKey]);
+  }, []);
 
   const googleLogin = useCallback(async (credential) => {
     const { data } = await api.post("/auth/google", { credential });
@@ -128,13 +136,13 @@ export function AuthProvider({ children }) {
     return data;
   }, []);
 
-  const setupEncryptionPassphrase = useCallback(async (passphrase) => {
-    if (!user?._id) throw new Error("Login first");
+  const setupEncryptionPassphrase = useCallback(async (passphrase, sourceUser = user) => {
+    if (!sourceUser?._id) throw new Error("Login first");
     if (!passphrase || passphrase.length < 8) {
       throw new Error("Chat recovery passphrase must be at least 8 characters long");
     }
 
-    const nextUser = await syncRecoverableEncryptionKey(user, passphrase);
+    const nextUser = await syncRecoverableEncryptionKey(sourceUser, passphrase);
     const updatedUser = {
       ...nextUser,
       encryptionPassphraseRequired: Boolean(nextUser.encryptionRecoveryRequired),
