@@ -10,14 +10,12 @@ import {
   FiMicOff,
   FiMinimize2,
   FiMinus,
-  FiMoreHorizontal,
   FiPhone,
   FiPhoneOff,
   FiPlus,
   FiRotateCcw,
   FiSearch,
   FiShare2,
-  FiUserPlus,
   FiVideo,
   FiVolume2,
   FiX,
@@ -1197,7 +1195,7 @@ export default function HomePage() {
           />
           <div className="absolute inset-x-0 top-0 z-10 h-32 bg-gradient-to-b from-black/55 to-transparent" />
           <div className="relative z-20 flex min-h-[100dvh] flex-col px-5 pb-5 pt-5 sm:px-8 sm:pb-7 sm:pt-7">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center">
               <button
                 type="button"
                 onClick={() => setIsCallMinimized(true)}
@@ -1205,14 +1203,6 @@ export default function HomePage() {
                 aria-label="Minimize call"
               >
                 <FiMinimize2 className="text-2xl sm:text-xl" />
-              </button>
-              <button
-                type="button"
-                className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-white/10 text-white shadow-xl shadow-black/20 backdrop-blur transition hover:bg-white/15 sm:h-12 sm:w-12"
-                aria-label="Add person"
-                title="Add person"
-              >
-                <FiUserPlus className="text-2xl sm:text-xl" />
               </button>
             </div>
 
@@ -1288,13 +1278,7 @@ export default function HomePage() {
                   </button>
                 </div>
               ) : (
-                <div className="grid grid-cols-5 items-center gap-2">
-                  <button type="button" className="flex flex-col items-center gap-2 text-[11px] font-medium text-white/70">
-                    <span className="grid h-12 w-12 place-items-center rounded-full bg-white/10 text-white transition hover:bg-white/15 sm:h-14 sm:w-14">
-                      <FiMoreHorizontal className="text-xl" />
-                    </span>
-                    More
-                  </button>
+                <div className="grid grid-cols-4 items-center gap-3">
                   <button type="button" className="flex flex-col items-center gap-2 text-[11px] font-medium text-white/70">
                     <span className="grid h-12 w-12 place-items-center rounded-full bg-white/10 text-white/75 transition hover:bg-white/15 sm:h-14 sm:w-14">
                       <FiVideo className="text-xl" />
