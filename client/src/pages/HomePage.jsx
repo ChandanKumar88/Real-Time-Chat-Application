@@ -97,6 +97,7 @@ export default function HomePage() {
     direction: "",
     peer: null,
     muted: false,
+    speakerOn: false,
     startedAt: null,
   });
   const [isCallMinimized, setIsCallMinimized] = useState(false);
@@ -118,6 +119,10 @@ export default function HomePage() {
   const processedCallEventsRef = useRef(new Set());
   const pendingLocalIceCandidatesRef = useRef([]);
   const activeCallHistoryIdRef = useRef("");
+  const speakerSinkIdRef = useRef("");
+  const speakerAudioContextRef = useRef(null);
+  const speakerSourceRef = useRef(null);
+  const speakerGainRef = useRef(null);
 
   useEffect(() => {
     if (user?.encryptionPassphraseRequired) return;
@@ -564,8 +569,10 @@ export default function HomePage() {
   function stopCallMedia() {
     localStreamRef.current?.getTracks().forEach((track) => track.stop());
     localStreamRef.current = null;
+    stopSpeakerAudioOutput();
 
     if (remoteAudioRef.current) {
+      remoteAudioRef.current.muted = false;
       remoteAudioRef.current.srcObject = null;
     }
     remoteStreamRef.current = null;
@@ -582,7 +589,7 @@ export default function HomePage() {
     activeCallHistoryIdRef.current = "";
     stopCallMedia();
     setIsCallMinimized(false);
-    setCallState({ status: "idle", direction: "", peer: null, muted: false, startedAt: null });
+    setCallState({ status: "idle", direction: "", peer: null, muted: false, speakerOn: false, startedAt: null });
   }
 
   async function sendCallSignal(type, to, payload = {}) {
@@ -639,10 +646,100 @@ export default function HomePage() {
     remoteAudioRef.current.playsInline = true;
     remoteAudioRef.current.srcObject = remoteStream;
     remoteAudioRef.current.muted = false;
-    remoteAudioRef.current.volume = 1;
+    remoteAudioRef.current.volume = callStateRef.current.speakerOn ? 1 : 0.75;
+    if (callStateRef.current.speakerOn) {
+      applySpeakerOutput(true).catch(() => null);
+    }
     remoteAudioRef.current.play().catch(() => {
       toast.error("Audio blocked hai. Call screen par ek baar tap karke audio allow karo.");
     });
+  }
+
+  async function applySpeakerOutput(enabled) {
+    const audioElement = remoteAudioRef.current;
+    if (!audioElement) return false;
+
+    if (!enabled) {
+      stopSpeakerAudioOutput();
+      audioElement.muted = false;
+      audioElement.play().catch(() => null);
+    }
+
+    audioElement.muted = false;
+    audioElement.volume = enabled ? 1 : 0.75;
+
+    if (typeof audioElement.setSinkId !== "function" || !navigator.mediaDevices?.enumerateDevices) {
+      return enabled ? startSpeakerAudioOutput() : false;
+    }
+
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const audioOutputs = devices.filter((device) => device.kind === "audiooutput");
+      if (!audioOutputs.length) return false;
+
+      if (!speakerSinkIdRef.current) {
+        const speakerOutput =
+          audioOutputs.find((device) => /speaker/i.test(device.label)) ||
+          audioOutputs.find((device) => device.deviceId === "default") ||
+          audioOutputs[0];
+        speakerSinkIdRef.current = speakerOutput.deviceId;
+      }
+
+      const normalOutput =
+        audioOutputs.find((device) => /communications/i.test(device.label)) ||
+        audioOutputs.find((device) => device.deviceId === "default") ||
+        audioOutputs[0];
+
+      await audioElement.setSinkId(enabled ? speakerSinkIdRef.current : normalOutput.deviceId);
+      return true;
+    } catch {
+      return enabled ? startSpeakerAudioOutput() : false;
+    }
+  }
+
+  function stopSpeakerAudioOutput() {
+    speakerSourceRef.current?.disconnect();
+    speakerGainRef.current?.disconnect();
+    speakerAudioContextRef.current?.close?.().catch(() => null);
+    speakerSourceRef.current = null;
+    speakerGainRef.current = null;
+    speakerAudioContextRef.current = null;
+  }
+
+  async function startSpeakerAudioOutput() {
+    if (!remoteStreamRef.current) return false;
+
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return false;
+
+    try {
+      stopSpeakerAudioOutput();
+      const audioContext = new AudioContextClass();
+      const source = audioContext.createMediaStreamSource(remoteStreamRef.current);
+      const gain = audioContext.createGain();
+      gain.gain.value = 1.35;
+      source.connect(gain);
+      gain.connect(audioContext.destination);
+
+      if (audioContext.state === "suspended") {
+        await audioContext.resume();
+      }
+
+      if (remoteAudioRef.current) {
+        remoteAudioRef.current.muted = true;
+      }
+
+      speakerAudioContextRef.current = audioContext;
+      speakerSourceRef.current = source;
+      speakerGainRef.current = gain;
+      return true;
+    } catch {
+      stopSpeakerAudioOutput();
+      if (remoteAudioRef.current) {
+        remoteAudioRef.current.muted = false;
+      }
+      return false;
+    }
   }
 
   async function addLocalAudioTracks(peerConnection) {
@@ -760,7 +857,7 @@ export default function HomePage() {
       callIdRef.current = "";
       queuedIceCandidatesRef.current = [];
       setIsCallMinimized(false);
-      setCallState({ status: "calling", direction: "outgoing", peer: selectedUser, muted: false, startedAt: null });
+      setCallState({ status: "calling", direction: "outgoing", peer: selectedUser, muted: false, speakerOn: false, startedAt: null });
       rememberCall(selectedUser, "outgoing");
 
       const peerConnection = await createPeerConnection(selectedUser._id);
@@ -831,6 +928,24 @@ export default function HomePage() {
     setCallState((prev) => ({ ...prev, muted: nextMuted }));
   }
 
+  async function toggleCallSpeaker() {
+    if (!["connecting", "active"].includes(callStateRef.current.status)) {
+      toast.error("Speaker call connect hone ke baad use karo.");
+      return;
+    }
+
+    const nextSpeakerOn = !callStateRef.current.speakerOn;
+    setCallState((prev) => ({ ...prev, speakerOn: nextSpeakerOn }));
+    const usedOutputDevice = await applySpeakerOutput(nextSpeakerOn);
+    toast.success(
+      nextSpeakerOn
+        ? usedOutputDevice
+          ? "Speaker output enabled"
+          : "Speaker mode enabled"
+        : "Speaker mode disabled"
+    );
+  }
+
   async function handleCallEvent(event) {
     if (!event?._id || processedCallEventsRef.current.has(event._id)) return;
     processedCallEventsRef.current.add(event._id);
@@ -856,6 +971,7 @@ export default function HomePage() {
         direction: "incoming",
         peer: getCallPeer(from, payload.caller),
         muted: false,
+        speakerOn: false,
         startedAt: null,
       });
       return;
@@ -1185,11 +1301,20 @@ export default function HomePage() {
                     </span>
                     Video
                   </button>
-                  <button type="button" className="flex flex-col items-center gap-2 text-[11px] font-medium text-white/70">
-                    <span className="grid h-12 w-12 place-items-center rounded-full bg-white/10 text-white transition hover:bg-white/15 sm:h-14 sm:w-14">
+                  <button
+                    type="button"
+                    onClick={toggleCallSpeaker}
+                    disabled={!["connecting", "active"].includes(callState.status)}
+                    className="flex flex-col items-center gap-2 text-[11px] font-medium text-white/70 disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <span
+                      className={`grid h-12 w-12 place-items-center rounded-full transition sm:h-14 sm:w-14 ${
+                        callState.speakerOn ? "bg-white text-[#111b21]" : "bg-white/10 text-white hover:bg-white/15"
+                      }`}
+                    >
                       <FiVolume2 className="text-xl" />
                     </span>
-                    Speaker
+                    {callState.speakerOn ? "Speaker on" : "Speaker"}
                   </button>
                   <button
                     type="button"
