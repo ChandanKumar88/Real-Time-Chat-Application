@@ -35,6 +35,25 @@ async function createCallEvent(req, res, type) {
     expiresAt: getExpiresAt(),
   });
 
+  const io = req.app.get("io");
+  const socketIds = getSocketIdsByUserId(to);
+  if (io && socketIds.length > 0) {
+    const realtimeEvent = event.toObject();
+    socketIds.forEach((socketId) => io.to(socketId).emit("call:event", realtimeEvent));
+
+    const eventNameMap = {
+      invite: "incoming-call",
+      accept: "call-accepted",
+      reject: payload.reason === "busy" ? "user-busy" : payload.reason === "missed" ? "missed-call" : "call-rejected",
+      end: "call-ended",
+      ice: "call-ice",
+    };
+    const aliasName = eventNameMap[type];
+    if (aliasName) {
+      socketIds.forEach((socketId) => io.to(socketId).emit(aliasName, realtimeEvent));
+    }
+  }
+
   return res.status(201).json({ success: true, data: event });
 }
 

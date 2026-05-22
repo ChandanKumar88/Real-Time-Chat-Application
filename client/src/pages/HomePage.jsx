@@ -67,6 +67,7 @@ export default function HomePage() {
     deleteConversation,
     blockUser,
     recordCallMessage,
+    socket,
     typingUsers,
     emitTyping,
     stopTyping,
@@ -121,6 +122,12 @@ export default function HomePage() {
   const speakerAudioContextRef = useRef(null);
   const speakerSourceRef = useRef(null);
   const speakerGainRef = useRef(null);
+  const ringtoneAudioContextRef = useRef(null);
+  const ringtoneIntervalRef = useRef(null);
+  const ringtoneKindRef = useRef("");
+  const ringtoneTimersRef = useRef([]);
+  const callTimeoutRef = useRef(null);
+  const callNotificationRef = useRef(null);
 
   useEffect(() => {
     if (user?.encryptionPassphraseRequired) return;
@@ -138,6 +145,68 @@ export default function HomePage() {
     const intervalId = window.setInterval(() => setCallClockTick((value) => value + 1), 1000);
     return () => window.clearInterval(intervalId);
   }, [callState.status]);
+
+  useEffect(() => {
+    function primeCallAudio() {
+      getRingtoneAudioContext()?.resume?.().catch(() => null);
+      if ("Notification" in window && Notification.permission === "default") {
+        const permissionRequest = Notification.requestPermission();
+        permissionRequest?.catch?.(() => null);
+      }
+    }
+
+    window.addEventListener("pointerdown", primeCallAudio, { once: true });
+    window.addEventListener("keydown", primeCallAudio, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", primeCallAudio);
+      window.removeEventListener("keydown", primeCallAudio);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (callState.status === "calling") {
+      playRingtone("outgoing");
+    } else if (callState.status === "ringing") {
+      playRingtone("incoming");
+      showIncomingCallNotification(callState.peer);
+    } else {
+      stopRingtone();
+    }
+
+    window.clearTimeout(callTimeoutRef.current);
+    if (["calling", "ringing"].includes(callState.status)) {
+      callTimeoutRef.current = window.setTimeout(() => {
+        if (callStateRef.current.status === "calling") {
+          completeCurrentCallHistory("outgoing");
+          saveCallMessage("outgoing");
+          notifyCallEnd();
+          toast.error("Call not answered");
+          resetCall();
+          return;
+        }
+
+        if (callStateRef.current.status === "ringing") {
+          rememberCall(callStateRef.current.peer, "missed");
+          saveCallMessage("missed");
+          if (callPeerIdRef.current) sendCallSignal("reject", callPeerIdRef.current, { reason: "missed" }).catch(() => null);
+          resetCall();
+        }
+      }, 45_000);
+    }
+
+    return () => window.clearTimeout(callTimeoutRef.current);
+  }, [callState.status, callState.peer]);
+
+  useEffect(() => {
+    if (!socket || !user || user.encryptionPassphraseRequired) return;
+
+    const handleRealtimeCallEvent = (event) => {
+      handleCallEvent(event).catch(() => null);
+    };
+
+    socket.on("call:event", handleRealtimeCallEvent);
+    return () => socket.off("call:event", handleRealtimeCallEvent);
+  }, [socket, user?._id, user?.encryptionPassphraseRequired]);
 
   useEffect(() => {
     usersRef.current = users;
@@ -564,6 +633,113 @@ export default function HomePage() {
     };
   }
 
+  function getRingtoneAudioContext() {
+    if (!window.AudioContext && !window.webkitAudioContext) return null;
+    if (!ringtoneAudioContextRef.current || ringtoneAudioContextRef.current.state === "closed") {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      ringtoneAudioContextRef.current = new AudioContextClass();
+    }
+    return ringtoneAudioContextRef.current;
+  }
+
+  function clearRingtoneTimers() {
+    if (ringtoneIntervalRef.current) {
+      window.clearInterval(ringtoneIntervalRef.current);
+      ringtoneIntervalRef.current = null;
+    }
+    ringtoneTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
+    ringtoneTimersRef.current = [];
+  }
+
+  function stopRingtone() {
+    clearRingtoneTimers();
+    ringtoneKindRef.current = "";
+    callNotificationRef.current?.close?.();
+    callNotificationRef.current = null;
+  }
+
+  function playRingtone(kind) {
+    if (!kind || ringtoneKindRef.current === kind) return;
+
+    stopRingtone();
+    const audioContext = getRingtoneAudioContext();
+    if (!audioContext) return;
+    ringtoneKindRef.current = kind;
+
+    audioContext.resume?.().catch(() => null);
+
+    const pattern =
+      kind === "incoming"
+        ? [
+            [880, 0, 0.18],
+            [660, 0.24, 0.18],
+            [880, 0.48, 0.18],
+            [660, 0.72, 0.18],
+          ]
+        : [
+            [440, 0, 0.22],
+            [554, 0.34, 0.22],
+            [659, 0.68, 0.22],
+          ];
+    const loopMs = kind === "incoming" ? 1800 : 2100;
+
+    function playPattern() {
+      const context = getRingtoneAudioContext();
+      if (!context || context.state === "closed") return;
+      const startAt = context.currentTime + 0.02;
+
+      pattern.forEach(([frequency, offset, duration]) => {
+        try {
+          const oscillator = context.createOscillator();
+          const gain = context.createGain();
+          oscillator.type = "sine";
+          oscillator.frequency.value = frequency;
+          gain.gain.setValueAtTime(0.0001, startAt + offset);
+          gain.gain.exponentialRampToValueAtTime(kind === "incoming" ? 0.16 : 0.09, startAt + offset + 0.03);
+          gain.gain.exponentialRampToValueAtTime(0.0001, startAt + offset + duration);
+          oscillator.connect(gain);
+          gain.connect(context.destination);
+          oscillator.start(startAt + offset);
+          oscillator.stop(startAt + offset + duration + 0.04);
+        } catch {
+          // Audio can be blocked until the browser receives a user gesture.
+        }
+      });
+    }
+
+    playPattern();
+    ringtoneIntervalRef.current = window.setInterval(playPattern, loopMs);
+  }
+
+  function showIncomingCallNotification(peer) {
+    if (!peer || !("Notification" in window) || !document.hidden) return;
+
+    const title = `${peer.fullName || "QuickChat user"} is calling you`;
+    const options = {
+      body: "Incoming voice call",
+      icon: peer.profilePic || "/favicon.svg",
+      tag: "quickchat-incoming-call",
+      renotify: true,
+    };
+
+    if (Notification.permission === "granted") {
+      callNotificationRef.current?.close?.();
+      callNotificationRef.current = new Notification(title, options);
+      return;
+    }
+
+    if (Notification.permission === "default") {
+      const permissionRequest = Notification.requestPermission();
+      permissionRequest
+        ?.then?.((permission) => {
+          if (permission !== "granted" || callStateRef.current.status !== "ringing") return;
+          callNotificationRef.current?.close?.();
+          callNotificationRef.current = new Notification(title, options);
+        })
+        ?.catch?.(() => null);
+    }
+  }
+
   function stopCallMedia() {
     localStreamRef.current?.getTracks().forEach((track) => track.stop());
     localStreamRef.current = null;
@@ -577,6 +753,8 @@ export default function HomePage() {
   }
 
   function resetCall() {
+    stopRingtone();
+    window.clearTimeout(callTimeoutRef.current);
     peerConnectionRef.current?.close();
     peerConnectionRef.current = null;
     pendingOfferRef.current = null;
