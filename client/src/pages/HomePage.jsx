@@ -1019,10 +1019,6 @@ export default function HomePage() {
 
   async function startAudioCall() {
     if (!selectedUser) return;
-    if (!selectedUser.isOnline) {
-      toast.error("User offline hai, audio call abhi start nahi ho sakti.");
-      return;
-    }
     if (callStateRef.current.status !== "idle") {
       toast.error("Ek call already active hai.");
       return;
@@ -1630,7 +1626,7 @@ export default function HomePage() {
           }}
           onStartAudioCall={startAudioCall}
           onStartVideoCall={handleStartVideoCall}
-          isCallDisabled={callState.status !== "idle" || !selectedUser?.isOnline || selectedUser?.isBlocked}
+          isCallDisabled={callState.status !== "idle" || selectedUser?.isBlocked}
           onOpenSearchPanel={() => {
             setIsSharedMediaOpen(false);
             setIsSearchOpen(true);

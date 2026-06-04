@@ -65,7 +65,46 @@ async function sendMessagePushNotification({ receiverId, sender, message }) {
   );
 }
 
+async function sendCallPushNotification({ receiverId, caller, callId }) {
+  if (!receiverId || !caller || !callId || !configureWebPush()) return;
+
+  const subscriptions = await PushSubscription.find({ userId: receiverId }).lean();
+  if (subscriptions.length === 0) return;
+
+  const payload = JSON.stringify({
+    type: "incoming-call",
+    title: caller.fullName || "QuickChat",
+    body: "Incoming voice call",
+    icon: caller.profilePic || "/favicon.svg",
+    badge: "/favicon.svg",
+    url: "/",
+    tag: `quickchat-call-${callId}`,
+    requireInteraction: true,
+    vibrate: [500, 180, 500, 180, 900, 250, 900],
+  });
+
+  await Promise.all(
+    subscriptions.map(async (subscription) => {
+      try {
+        await webpush.sendNotification(
+          {
+            endpoint: subscription.endpoint,
+            keys: subscription.keys,
+          },
+          payload,
+          { TTL: 45 }
+        );
+      } catch (error) {
+        if (error.statusCode === 404 || error.statusCode === 410) {
+          await PushSubscription.deleteOne({ endpoint: subscription.endpoint });
+        }
+      }
+    })
+  );
+}
+
 module.exports = {
   getVapidPublicKey,
+  sendCallPushNotification,
   sendMessagePushNotification,
 };

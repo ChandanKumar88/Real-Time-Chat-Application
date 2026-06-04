@@ -15,13 +15,25 @@ self.addEventListener("push", (event) => {
       const hasFocusedQuickChat = windowClients.some((client) => client.focused);
       if (hasFocusedQuickChat) return;
 
+      const isIncomingCall = data.type === "incoming-call";
+
       await self.registration.showNotification(data.title || "QuickChat", {
         body: data.body || "New message",
         icon: data.icon || "/favicon.svg",
         badge: data.badge || "/favicon.svg",
         tag: data.tag || "quickchat-message",
+        requireInteraction: Boolean(data.requireInteraction || isIncomingCall),
         renotify: true,
+        silent: false,
+        vibrate: data.vibrate || (isIncomingCall ? [500, 180, 500, 180, 900] : [180, 80, 180]),
+        actions: isIncomingCall
+          ? [
+              { action: "open-call", title: "Open QuickChat" },
+              { action: "dismiss-call", title: "Dismiss" },
+            ]
+          : [],
         data: {
+          type: data.type || "message",
           url: data.url || "/",
         },
       });
@@ -31,6 +43,8 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
+  if (event.action === "dismiss-call") return;
+
   const targetUrl = new URL(event.notification.data?.url || "/", self.location.origin).href;
 
   event.waitUntil(

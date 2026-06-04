@@ -2,7 +2,9 @@ const crypto = require("crypto");
 const mongoose = require("mongoose");
 const CallEvent = require("../models/CallEvent");
 const Message = require("../models/Message");
+const User = require("../models/User");
 const { getSocketIdsByUserId } = require("../socket/presenceStore");
+const { sendCallPushNotification } = require("../utils/pushNotifications");
 
 const CALL_EVENT_TTL_MS = 2 * 60 * 1000;
 
@@ -52,6 +54,15 @@ async function createCallEvent(req, res, type) {
     if (aliasName) {
       socketIds.forEach((socketId) => io.to(socketId).emit(aliasName, realtimeEvent));
     }
+  }
+
+  if (type === "invite") {
+    const caller = await User.findById(req.user.id).select("fullName profilePic").lean();
+    sendCallPushNotification({
+      receiverId: to,
+      caller: caller || payload.caller,
+      callId: nextCallId,
+    }).catch(() => null);
   }
 
   return res.status(201).json({ success: true, data: event });
