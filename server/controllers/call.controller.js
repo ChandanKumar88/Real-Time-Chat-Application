@@ -62,6 +62,7 @@ async function createCallEvent(req, res, type) {
       receiverId: to,
       caller: caller || payload.caller,
       callId: nextCallId,
+      callType: payload.callType === "video" ? "video" : "audio",
     }).catch(() => null);
   }
 

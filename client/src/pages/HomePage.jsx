@@ -17,6 +17,7 @@ import {
   FiSearch,
   FiShare2,
   FiVideo,
+  FiVideoOff,
   FiVolume2,
   FiX,
 } from "react-icons/fi";
@@ -97,6 +98,8 @@ export default function HomePage() {
     peer: null,
     muted: false,
     speakerOn: false,
+    cameraOff: false,
+    type: "audio",
     startedAt: null,
   });
   const [isCallMinimized, setIsCallMinimized] = useState(false);
@@ -105,6 +108,8 @@ export default function HomePage() {
   const [, setCallClockTick] = useState(0);
   const pinchStateRef = useRef(null);
   const remoteAudioRef = useRef(null);
+  const remoteVideoRef = useRef(null);
+  const localVideoRef = useRef(null);
   const remoteStreamRef = useRef(null);
   const peerConnectionRef = useRef(null);
   const localStreamRef = useRef(null);
@@ -128,6 +133,11 @@ export default function HomePage() {
   const ringtoneTimersRef = useRef([]);
   const callTimeoutRef = useRef(null);
   const callNotificationRef = useRef(null);
+  const selectedMessagesPaging = selectedUser ? messagesPaging?.[selectedUser._id] || {} : {};
+  const isCallOpen = callState.status !== "idle";
+  const shouldShowFullCallScreen = isCallOpen && !isCallMinimized;
+  const isVideoCall = callState.type === "video";
+  const isVideoActive = isVideoCall && ["connecting", "active"].includes(callState.status);
 
   useEffect(() => {
     if (user?.encryptionPassphraseRequired) return;
@@ -186,7 +196,7 @@ export default function HomePage() {
         }
 
         if (callStateRef.current.status === "ringing") {
-          rememberCall(callStateRef.current.peer, "missed");
+          rememberCall(callStateRef.current.peer, "missed", callStateRef.current.type || "audio");
           saveCallMessage("missed");
           if (callPeerIdRef.current) sendCallSignal("reject", callPeerIdRef.current, { reason: "missed" }).catch(() => null);
           resetCall();
@@ -207,6 +217,12 @@ export default function HomePage() {
     socket.on("call:event", handleRealtimeCallEvent);
     return () => socket.off("call:event", handleRealtimeCallEvent);
   }, [socket, user?._id, user?.encryptionPassphraseRequired]);
+
+  useEffect(() => {
+    if (!shouldShowFullCallScreen || !isVideoCall) return;
+    if (localStreamRef.current) attachLocalVideoStream(localStreamRef.current);
+    if (remoteStreamRef.current) attachRemoteMediaStream(remoteStreamRef.current);
+  }, [shouldShowFullCallScreen, isVideoCall, callState.status, callState.cameraOff]);
 
   useEffect(() => {
     usersRef.current = users;
@@ -310,9 +326,6 @@ export default function HomePage() {
       }
     }
   }
-  const selectedMessagesPaging = selectedUser ? messagesPaging?.[selectedUser._id] || {} : {};
-  const isCallOpen = callState.status !== "idle";
-  const shouldShowFullCallScreen = isCallOpen && !isCallMinimized;
   const previewableMedia = useMemo(
     () =>
       messages
@@ -489,7 +502,8 @@ export default function HomePage() {
   }
 
   function getCallStatusText() {
-    if (callState.status === "ringing") return "Incoming audio call";
+    const label = callState.type === "video" ? "video" : "audio";
+    if (callState.status === "ringing") return `Incoming ${label} call`;
     if (callState.status === "calling") return "Calling...";
     if (callState.status === "connecting") return "Connecting...";
     if (callState.status === "active") {
@@ -541,7 +555,7 @@ export default function HomePage() {
     if (!peer?._id) return;
 
     if (!activeCallHistoryIdRef.current) {
-      rememberCall(peer, fallbackStatus);
+      rememberCall(peer, fallbackStatus, callStateRef.current.type || "audio");
       return;
     }
 
@@ -569,14 +583,14 @@ export default function HomePage() {
     recordCallMessage(peerId, {
       callerId,
       callId: callIdRef.current,
-      callType: "audio",
+      callType: callStateRef.current.type || "audio",
       callStatus: status,
       callDurationSeconds: durationSeconds,
     }).catch(() => null);
   }
 
   function handleStartVideoCall() {
-    toast("Video call UI ready hai, video calling logic abhi add nahi hua.");
+    startVideoCall();
   }
 
   function handleDesktopTabChange(tab) {
@@ -715,8 +729,9 @@ export default function HomePage() {
     if (!peer || !("Notification" in window) || !document.hidden) return;
 
     const title = `${peer.fullName || "QuickChat user"} is calling you`;
+    const callTypeLabel = callStateRef.current.type === "video" ? "video" : "voice";
     const options = {
-      body: "Incoming voice call",
+      body: `Incoming ${callTypeLabel} call`,
       icon: peer.profilePic || "/favicon.svg",
       tag: "quickchat-incoming-call",
       renotify: true,
@@ -749,6 +764,12 @@ export default function HomePage() {
       remoteAudioRef.current.muted = false;
       remoteAudioRef.current.srcObject = null;
     }
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = null;
+    }
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = null;
+    }
     remoteStreamRef.current = null;
   }
 
@@ -765,7 +786,7 @@ export default function HomePage() {
     activeCallHistoryIdRef.current = "";
     stopCallMedia();
     setIsCallMinimized(false);
-    setCallState({ status: "idle", direction: "", peer: null, muted: false, speakerOn: false, startedAt: null });
+    setCallState({ status: "idle", direction: "", peer: null, muted: false, speakerOn: false, cameraOff: false, type: "audio", startedAt: null });
   }
 
   async function sendCallSignal(type, to, payload = {}) {
@@ -814,7 +835,7 @@ export default function HomePage() {
     );
   }
 
-  function attachRemoteAudioStream(remoteStream) {
+  function attachRemoteMediaStream(remoteStream) {
     if (!remoteStream || !remoteAudioRef.current) return;
 
     remoteStreamRef.current = remoteStream;
@@ -829,6 +850,23 @@ export default function HomePage() {
     remoteAudioRef.current.play().catch(() => {
       toast.error("Audio blocked hai. Call screen par ek baar tap karke audio allow karo.");
     });
+
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.autoplay = true;
+      remoteVideoRef.current.muted = true;
+      remoteVideoRef.current.playsInline = true;
+      remoteVideoRef.current.srcObject = remoteStream;
+      remoteVideoRef.current.play().catch(() => null);
+    }
+  }
+
+  function attachLocalVideoStream(localStream) {
+    if (!localVideoRef.current || !localStream) return;
+    localVideoRef.current.muted = true;
+    localVideoRef.current.autoplay = true;
+    localVideoRef.current.playsInline = true;
+    localVideoRef.current.srcObject = localStream;
+    localVideoRef.current.play().catch(() => null);
   }
 
   async function applySpeakerOutput(enabled) {
@@ -918,7 +956,7 @@ export default function HomePage() {
     }
   }
 
-  async function addLocalAudioTracks(peerConnection) {
+  async function addLocalMediaTracks(peerConnection, callType = "audio") {
     if (localStreamRef.current) {
       localStreamRef.current.getAudioTracks().forEach((track) => {
         track.enabled = !callStateRef.current.muted;
@@ -926,6 +964,13 @@ export default function HomePage() {
           peerConnection.addTrack(track, localStreamRef.current);
         }
       });
+      localStreamRef.current.getVideoTracks().forEach((track) => {
+        track.enabled = !callStateRef.current.cameraOff;
+        if (!peerConnection.getSenders().some((sender) => sender.track?.id === track.id)) {
+          peerConnection.addTrack(track, localStreamRef.current);
+        }
+      });
+      attachLocalVideoStream(localStreamRef.current);
       return;
     }
 
@@ -935,9 +980,17 @@ export default function HomePage() {
         noiseSuppression: true,
         autoGainControl: true,
       },
-      video: false,
+      video:
+        callType === "video"
+          ? {
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+              facingMode: "user",
+            }
+          : false,
     });
     localStreamRef.current = localStream;
+    attachLocalVideoStream(localStream);
 
     const audioTracks = localStream.getAudioTracks();
     if (audioTracks.length === 0) {
@@ -946,6 +999,10 @@ export default function HomePage() {
 
     audioTracks.forEach((track) => {
       track.enabled = !callStateRef.current.muted;
+      peerConnection.addTrack(track, localStream);
+    });
+    localStream.getVideoTracks().forEach((track) => {
+      track.enabled = !callStateRef.current.cameraOff;
       peerConnection.addTrack(track, localStream);
     });
   }
@@ -1003,7 +1060,7 @@ export default function HomePage() {
       if (!event.streams?.[0] && event.track && !remoteStream.getTracks().some((track) => track.id === event.track.id)) {
         remoteStream.addTrack(event.track);
       }
-      attachRemoteAudioStream(remoteStream);
+      attachRemoteMediaStream(remoteStream);
     };
 
     peerConnection.onconnectionstatechange = () => {
@@ -1017,7 +1074,7 @@ export default function HomePage() {
     return peerConnection;
   }
 
-  async function startAudioCall() {
+  async function startCall(callType = "audio") {
     if (!selectedUser) return;
     if (callStateRef.current.status !== "idle") {
       toast.error("Ek call already active hai.");
@@ -1029,21 +1086,38 @@ export default function HomePage() {
       callIdRef.current = "";
       queuedIceCandidatesRef.current = [];
       setIsCallMinimized(false);
-      setCallState({ status: "calling", direction: "outgoing", peer: selectedUser, muted: false, speakerOn: false, startedAt: null });
-      rememberCall(selectedUser, "outgoing");
+      setCallState({
+        status: "calling",
+        direction: "outgoing",
+        peer: selectedUser,
+        muted: false,
+        speakerOn: false,
+        cameraOff: false,
+        type: callType,
+        startedAt: null,
+      });
+      rememberCall(selectedUser, "outgoing", callType);
 
       const peerConnection = await createPeerConnection(selectedUser._id);
-      await addLocalAudioTracks(peerConnection);
+      await addLocalMediaTracks(peerConnection, callType);
       const offer = await peerConnection.createOffer();
       await peerConnection.setLocalDescription(offer);
       await waitForIceGatheringComplete(peerConnection);
 
-      await sendCallSignal("invite", selectedUser._id, { caller: getCallerSnapshot(), offer: peerConnection.localDescription });
+      await sendCallSignal("invite", selectedUser._id, { caller: getCallerSnapshot(), callType, offer: peerConnection.localDescription });
       await flushLocalIceCandidates(selectedUser._id);
     } catch (error) {
       resetCall();
-      toast.error(error?.message || "Audio call start nahi ho pa rahi.");
+      toast.error(error?.message || `${callType === "video" ? "Video" : "Audio"} call start nahi ho pa rahi.`);
     }
+  }
+
+  function startAudioCall() {
+    startCall("audio");
+  }
+
+  function startVideoCall() {
+    startCall("video");
   }
 
   async function acceptAudioCall() {
@@ -1055,7 +1129,7 @@ export default function HomePage() {
       setCallState((prev) => ({ ...prev, status: "connecting" }));
       const peerConnection = await createPeerConnection(peerId);
       await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-      await addLocalAudioTracks(peerConnection);
+      await addLocalMediaTracks(peerConnection, callStateRef.current.type || "audio");
       await flushQueuedIceCandidates();
 
       const answer = await peerConnection.createAnswer();
@@ -1065,7 +1139,7 @@ export default function HomePage() {
       await flushLocalIceCandidates(peerId);
 
       setCallState((prev) => ({ ...prev, status: "active", startedAt: prev.startedAt || Date.now() }));
-      rememberCall(callStateRef.current.peer, "received");
+      rememberCall(callStateRef.current.peer, "received", callStateRef.current.type || "audio");
       pendingOfferRef.current = null;
     } catch (error) {
       sendCallSignal("reject", peerId, { reason: "failed" }).catch(() => null);
@@ -1077,7 +1151,7 @@ export default function HomePage() {
   function rejectAudioCall() {
     const peerId = callPeerIdRef.current;
     if (callStateRef.current.direction === "incoming") {
-      rememberCall(callStateRef.current.peer, "missed");
+      rememberCall(callStateRef.current.peer, "missed", callStateRef.current.type || "audio");
       saveCallMessage("missed");
     }
     if (peerId) sendCallSignal("reject", peerId, { reason: "rejected" }).catch(() => null);
@@ -1098,6 +1172,19 @@ export default function HomePage() {
       track.enabled = !nextMuted;
     });
     setCallState((prev) => ({ ...prev, muted: nextMuted }));
+  }
+
+  function toggleCallCamera() {
+    if (callStateRef.current.type !== "video") {
+      toast.error("Camera sirf video call mein use hota hai.");
+      return;
+    }
+    const nextCameraOff = !callStateRef.current.cameraOff;
+    localStreamRef.current?.getVideoTracks().forEach((track) => {
+      track.enabled = !nextCameraOff;
+    });
+    if (!nextCameraOff) attachLocalVideoStream(localStreamRef.current);
+    setCallState((prev) => ({ ...prev, cameraOff: nextCameraOff }));
   }
 
   async function toggleCallSpeaker() {
@@ -1144,6 +1231,8 @@ export default function HomePage() {
         peer: getCallPeer(from, payload.caller),
         muted: false,
         speakerOn: false,
+        cameraOff: false,
+        type: payload.callType === "video" ? "video" : "audio",
         startedAt: null,
       });
       return;
@@ -1176,7 +1265,8 @@ export default function HomePage() {
     }
 
     if (event.type === "reject") {
-      const message = payload.reason === "busy" ? "User dusri call mein busy hai." : "Audio call reject ho gayi.";
+      const callTypeLabel = callStateRef.current.type === "video" ? "Video call" : "Audio call";
+      const message = payload.reason === "busy" ? "User dusri call mein busy hai." : `${callTypeLabel} reject ho gayi.`;
       completeCurrentCallHistory("outgoing");
       saveCallMessage("outgoing");
       resetCall();
@@ -1186,15 +1276,16 @@ export default function HomePage() {
 
     if (event.type === "end" && callStateRef.current.status !== "idle") {
       if (callStateRef.current.status === "ringing" && callStateRef.current.direction === "incoming") {
-        rememberCall(callStateRef.current.peer, "missed");
+        rememberCall(callStateRef.current.peer, "missed", callStateRef.current.type || "audio");
         saveCallMessage("missed");
       } else {
         const status = callStateRef.current.direction === "incoming" ? "received" : "outgoing";
         completeCurrentCallHistory(status);
         saveCallMessage(status);
       }
+      const endedCallLabel = callStateRef.current.type === "video" ? "Video" : "Audio";
       resetCall();
-      toast("Audio call ended");
+      toast(`${endedCallLabel} call ended`);
     }
   }
 
@@ -1359,15 +1450,34 @@ export default function HomePage() {
 
       {shouldShowFullCallScreen && (
         <div className="fixed inset-0 z-[70] flex min-h-[100dvh] flex-col overflow-hidden bg-[#111b21] text-white">
+          {isVideoActive && (
+            <video
+              ref={remoteVideoRef}
+              autoPlay
+              playsInline
+              className="absolute inset-0 h-full w-full bg-[#111b21] object-cover"
+            />
+          )}
           <div
-            className="absolute inset-0 opacity-35"
+            className={`absolute inset-0 ${isVideoActive ? "opacity-25" : "opacity-35"}`}
             style={{
               backgroundImage:
-                `linear-gradient(rgba(17,27,33,0.88), rgba(17,27,33,0.92)), url(${bgImage})`,
+                `${isVideoActive ? "linear-gradient(rgba(17,27,33,0.25), rgba(17,27,33,0.42))" : "linear-gradient(rgba(17,27,33,0.88), rgba(17,27,33,0.92))"}, url(${bgImage})`,
               backgroundSize: "cover, 430px",
             }}
           />
           <div className="absolute inset-x-0 top-0 z-10 h-32 bg-gradient-to-b from-black/55 to-transparent" />
+          {isVideoCall && ["calling", "connecting", "active"].includes(callState.status) && (
+            <div className="absolute right-4 top-24 z-30 h-36 w-28 overflow-hidden rounded-2xl border border-white/15 bg-black/50 shadow-2xl shadow-black/40 sm:right-8 sm:top-28 sm:h-44 sm:w-36">
+              {callState.cameraOff ? (
+                <div className="grid h-full w-full place-items-center bg-[#182229] text-xs font-semibold text-white/70">
+                  Camera off
+                </div>
+              ) : (
+                <video ref={localVideoRef} autoPlay muted playsInline className="h-full w-full scale-x-[-1] object-cover" />
+              )}
+            </div>
+          )}
           <div className="relative z-20 flex min-h-[100dvh] flex-col px-5 pb-5 pt-5 sm:px-8 sm:pb-7 sm:pt-7">
             <div className="flex items-center">
               <button
@@ -1390,26 +1500,28 @@ export default function HomePage() {
               </p>
             </div>
 
-            <div className="flex flex-1 flex-col items-center justify-center text-center">
-              <div className="relative flex h-52 w-52 items-center justify-center sm:h-64 sm:w-64">
-                <span className="quickchat-call-ripple quickchat-call-ripple-1" />
-                <span className="quickchat-call-ripple quickchat-call-ripple-2" />
-                <span className="quickchat-call-ripple quickchat-call-ripple-3" />
-                {callState.peer?.profilePic ? (
-                  <img
-                    src={callState.peer.profilePic}
-                    alt={callState.peer?.fullName || "Caller"}
-                    className="relative z-10 h-36 w-36 rounded-full border border-white/15 object-cover shadow-2xl shadow-black/50 sm:h-44 sm:w-44"
-                  />
-                ) : (
-                  <span className="relative z-10 grid h-36 w-36 place-items-center rounded-full border border-white/15 bg-[#eeedfe] text-4xl font-semibold text-[#3c3489] shadow-2xl shadow-black/50 sm:h-44 sm:w-44 sm:text-5xl">
-                    {getCallInitials(callState.peer?.fullName)}
-                  </span>
-                )}
-              </div>
+            <div className={`flex flex-1 flex-col items-center justify-center text-center ${isVideoActive ? "justify-end pb-28 sm:pb-32" : ""}`}>
+              {!isVideoActive && (
+                <div className="relative flex h-52 w-52 items-center justify-center sm:h-64 sm:w-64">
+                  <span className="quickchat-call-ripple quickchat-call-ripple-1" />
+                  <span className="quickchat-call-ripple quickchat-call-ripple-2" />
+                  <span className="quickchat-call-ripple quickchat-call-ripple-3" />
+                  {callState.peer?.profilePic ? (
+                    <img
+                      src={callState.peer.profilePic}
+                      alt={callState.peer?.fullName || "Caller"}
+                      className="relative z-10 h-36 w-36 rounded-full border border-white/15 object-cover shadow-2xl shadow-black/50 sm:h-44 sm:w-44"
+                    />
+                  ) : (
+                    <span className="relative z-10 grid h-36 w-36 place-items-center rounded-full border border-white/15 bg-[#eeedfe] text-4xl font-semibold text-[#3c3489] shadow-2xl shadow-black/50 sm:h-44 sm:w-44 sm:text-5xl">
+                      {getCallInitials(callState.peer?.fullName)}
+                    </span>
+                  )}
+                </div>
+              )}
               {callState.status === "active" ? (
                 <>
-                  <p className="mt-6 text-2xl font-semibold tabular-nums text-emerald-400 sm:text-3xl">
+                  <p className={`mt-6 text-2xl font-semibold tabular-nums text-emerald-400 sm:text-3xl ${isVideoActive ? "drop-shadow-[0_2px_10px_rgba(0,0,0,0.85)]" : ""}`}>
                     {formatCallDuration(callState.startedAt)}
                   </p>
                   <div className="quickchat-call-wave mt-5" aria-hidden="true">
@@ -1446,18 +1558,27 @@ export default function HomePage() {
                     className="flex flex-col items-center gap-2 text-xs font-semibold text-white/75"
                   >
                     <span className="grid h-16 w-16 place-items-center rounded-full bg-emerald-500 text-white shadow-lg shadow-emerald-950/30 transition hover:bg-emerald-600">
-                      <FiPhone className="text-2xl" />
+                      {isVideoCall ? <FiVideo className="text-2xl" /> : <FiPhone className="text-2xl" />}
                     </span>
                     Accept
                   </button>
                 </div>
               ) : (
                 <div className="grid grid-cols-4 items-center gap-3">
-                  <button type="button" className="flex flex-col items-center gap-2 text-[11px] font-medium text-white/70">
-                    <span className="grid h-12 w-12 place-items-center rounded-full bg-white/10 text-white/75 transition hover:bg-white/15 sm:h-14 sm:w-14">
-                      <FiVideo className="text-xl" />
+                  <button
+                    type="button"
+                    onClick={toggleCallCamera}
+                    disabled={!isVideoCall || !["calling", "connecting", "active"].includes(callState.status)}
+                    className="flex flex-col items-center gap-2 text-[11px] font-medium text-white/70 disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <span
+                      className={`grid h-12 w-12 place-items-center rounded-full transition sm:h-14 sm:w-14 ${
+                        callState.cameraOff ? "bg-white text-[#111b21]" : "bg-white/10 text-white/75 hover:bg-white/15"
+                      }`}
+                    >
+                      {callState.cameraOff ? <FiVideoOff className="text-xl" /> : <FiVideo className="text-xl" />}
                     </span>
-                    Video
+                    {callState.cameraOff ? "Camera on" : "Camera"}
                   </button>
                   <button
                     type="button"
@@ -1561,7 +1682,17 @@ export default function HomePage() {
           >
             <span className="flex min-w-0 items-center gap-3">
               <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white/10">
-                {callState.muted ? <FiMicOff className="text-xl text-white/85" /> : <FiPhone className="text-xl text-emerald-400" />}
+                {callState.type === "video" ? (
+                  callState.cameraOff ? (
+                    <FiVideoOff className="text-xl text-white/85" />
+                  ) : (
+                    <FiVideo className="text-xl text-emerald-400" />
+                  )
+                ) : callState.muted ? (
+                  <FiMicOff className="text-xl text-white/85" />
+                ) : (
+                  <FiPhone className="text-xl text-emerald-400" />
+                )}
               </span>
               <span className="min-w-0">
                 <span className="block truncate text-base font-semibold text-emerald-400">

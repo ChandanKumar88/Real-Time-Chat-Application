@@ -772,6 +772,19 @@ export default function ChatContainer({
         <div className="flex shrink-0 items-center gap-1.5">
           <button
             type="button"
+            onClick={onStartVideoCall}
+            disabled={isCallDisabled}
+            className={`inline-flex h-8 w-8 items-center justify-center rounded-lg transition sm:h-9 sm:w-9 lg:hidden ${
+              isDark
+                ? "border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 disabled:text-slate-600"
+                : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 disabled:text-slate-300"
+            } disabled:cursor-not-allowed`}
+            title={isCallDisabled ? "Video call unavailable" : "Video call"}
+          >
+            <FiVideo />
+          </button>
+          <button
+            type="button"
             onClick={onStartAudioCall}
             disabled={isCallDisabled}
             className={`inline-flex h-8 w-8 items-center justify-center rounded-lg transition sm:h-9 sm:w-9 lg:hidden ${
@@ -795,10 +808,11 @@ export default function ChatContainer({
             <button
               type="button"
               onClick={onStartVideoCall}
-              className={`inline-flex h-11 w-11 items-center justify-center rounded-full text-2xl transition ${
+              disabled={isCallDisabled}
+              className={`inline-flex h-11 w-11 items-center justify-center rounded-full text-2xl transition disabled:cursor-not-allowed disabled:opacity-40 ${
                 isDark ? "text-slate-100 hover:bg-white/10" : "text-slate-800 hover:bg-slate-100"
               }`}
-              title="Video call"
+              title={isCallDisabled ? "Video call unavailable" : "Video call"}
             >
               <FiVideo />
             </button>

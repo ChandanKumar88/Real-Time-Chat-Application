@@ -65,7 +65,7 @@ async function sendMessagePushNotification({ receiverId, sender, message }) {
   );
 }
 
-async function sendCallPushNotification({ receiverId, caller, callId }) {
+async function sendCallPushNotification({ receiverId, caller, callId, callType = "audio" }) {
   if (!receiverId || !caller || !callId || !configureWebPush()) return;
 
   const subscriptions = await PushSubscription.find({ userId: receiverId }).lean();
@@ -74,7 +74,7 @@ async function sendCallPushNotification({ receiverId, caller, callId }) {
   const payload = JSON.stringify({
     type: "incoming-call",
     title: caller.fullName || "QuickChat",
-    body: "Incoming voice call",
+    body: callType === "video" ? "Incoming video call" : "Incoming voice call",
     icon: caller.profilePic || "/favicon.svg",
     badge: "/favicon.svg",
     url: "/",
