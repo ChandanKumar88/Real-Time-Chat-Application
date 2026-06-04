@@ -23,6 +23,17 @@ function configureWebPush() {
   return true;
 }
 
+function shouldRemovePushSubscription(error) {
+  return [400, 403, 404, 410].includes(error?.statusCode);
+}
+
+function logPushFailure(error, context) {
+  if (process.env.NODE_ENV === "test") return;
+  const status = error?.statusCode ? ` status=${error.statusCode}` : "";
+  const body = error?.body ? ` body=${error.body}` : "";
+  console.warn(`Push notification failed${context ? ` (${context})` : ""}.${status}${body}`);
+}
+
 function getMessageNotificationBody(message) {
   if (message.image) return "Photo";
   if (message.video) return "Video";
@@ -57,7 +68,8 @@ async function sendMessagePushNotification({ receiverId, sender, message }) {
           payload
         );
       } catch (error) {
-        if (error.statusCode === 404 || error.statusCode === 410) {
+        logPushFailure(error, "message");
+        if (shouldRemovePushSubscription(error)) {
           await PushSubscription.deleteOne({ endpoint: subscription.endpoint });
         }
       }
@@ -95,7 +107,8 @@ async function sendCallPushNotification({ receiverId, caller, callId, callType =
           { TTL: 45 }
         );
       } catch (error) {
-        if (error.statusCode === 404 || error.statusCode === 410) {
+        logPushFailure(error, "call");
+        if (shouldRemovePushSubscription(error)) {
           await PushSubscription.deleteOne({ endpoint: subscription.endpoint });
         }
       }
