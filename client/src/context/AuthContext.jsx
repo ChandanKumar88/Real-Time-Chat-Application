@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import toast from "react-hot-toast";
 import { api, beginManualLogout, endManualLogout, isManualLogoutInProgress } from "../services/api";
 import { ensureRecoverableKeyPair, getLocalKeyPair } from "../utils/e2ee";
+import { setupPushNotifications, unregisterPushNotifications } from "../utils/pushNotifications";
 
 const AuthContext = createContext(null);
 
@@ -82,6 +83,11 @@ export function AuthProvider({ children }) {
     getMe();
   }, [token]);
 
+  useEffect(() => {
+    if (!user?._id || user.encryptionPassphraseRequired) return;
+    setupPushNotifications();
+  }, [user?._id, user?.encryptionPassphraseRequired]);
+
   const signup = useCallback(async (payload) => {
     const { data } = await api.post("/auth/signup", payload);
     return data;
@@ -157,6 +163,7 @@ export function AuthProvider({ children }) {
     beginManualLogout();
 
     try {
+      await unregisterPushNotifications();
       if (localStorage.getItem("chat_token")) {
         await api.post("/auth/logout", null, { skipSessionReplacedHandler: true });
       }

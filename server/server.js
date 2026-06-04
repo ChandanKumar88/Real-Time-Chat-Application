@@ -9,6 +9,7 @@ const authRoutes = require("./routes/auth.routes.js");
 const userRoutes = require("./routes/user.routes.js");
 const messageRoutes = require("./routes/message.routes.js");
 const callRoutes = require("./routes/call.routes.js");
+const pushRoutes = require("./routes/push.routes.js");
 const { registerSocketHandlers } = require("./socket/socketHandlers.js");
 
 dotenv.config();
@@ -66,6 +67,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/calls", callRoutes);
+app.use("/api/push", pushRoutes);
 
 app.use((err, _req, res, _next) => {
   const statusCode = err.statusCode || 500;

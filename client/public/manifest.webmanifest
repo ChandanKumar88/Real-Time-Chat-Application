@@ -1,0 +1,18 @@
+{
+  "name": "QuickChat",
+  "short_name": "QuickChat",
+  "description": "Real-time chat app",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#050505",
+  "theme_color": "#863bff",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "48x48 72x72 96x96 128x128 192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

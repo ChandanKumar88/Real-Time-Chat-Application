@@ -3,6 +3,7 @@ const Message = require("../models/Message");
 const User = require("../models/User");
 const { cloudinary } = require("../config/cloudinary");
 const { getSocketIdsByUserId } = require("../socket/presenceStore");
+const { sendMessagePushNotification } = require("../utils/pushNotifications");
 
 function getUploadSignature(_req, res) {
   const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
@@ -92,7 +93,7 @@ async function sendMessage(req, res) {
   }
 
   const [sender, receiver] = await Promise.all([
-    User.findById(req.user.id).select("publicKey blockedUsers"),
+    User.findById(req.user.id).select("fullName profilePic publicKey blockedUsers"),
     User.findById(userId).select("publicKey blockedUsers"),
   ]);
 
@@ -175,6 +176,12 @@ async function sendMessage(req, res) {
   if (receiverSocketIds.length > 0) {
     io.to(receiverSocketIds).emit("message:new", message);
   }
+
+  sendMessagePushNotification({
+    receiverId: userId,
+    sender,
+    message,
+  }).catch(() => null);
 
   res.status(201).json({ success: true, data: message });
 }
