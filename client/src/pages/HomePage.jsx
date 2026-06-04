@@ -105,6 +105,7 @@ export default function HomePage() {
   const [isCallMinimized, setIsCallMinimized] = useState(false);
   const [callHistory, setCallHistory] = useState([]);
   const [isCallHistoryLoaded, setIsCallHistoryLoaded] = useState(false);
+  const [callHasVideo, setCallHasVideo] = useState(false);
   const [, setCallClockTick] = useState(0);
   const pinchStateRef = useRef(null);
   const remoteAudioRef = useRef(null);
@@ -133,10 +134,11 @@ export default function HomePage() {
   const ringtoneTimersRef = useRef([]);
   const callTimeoutRef = useRef(null);
   const callNotificationRef = useRef(null);
+  const callConnectionFailTimeoutRef = useRef(null);
   const selectedMessagesPaging = selectedUser ? messagesPaging?.[selectedUser._id] || {} : {};
   const isCallOpen = callState.status !== "idle";
   const shouldShowFullCallScreen = isCallOpen && !isCallMinimized;
-  const isVideoCall = callState.type === "video";
+  const isVideoCall = callState.type === "video" || callHasVideo;
   const isVideoActive = isVideoCall && ["connecting", "active"].includes(callState.status);
 
   useEffect(() => {
@@ -283,7 +285,7 @@ export default function HomePage() {
 
           let previewText = "Message";
           if (lastMessage.decryptionFailed) previewText = "Message can't be opened";
-          else if (lastMessage.callType) previewText = "Voice call";
+          else if (lastMessage.callType) previewText = lastMessage.callType === "video" ? "Video call" : "Voice call";
           else if (lastMessage.text) previewText = lastMessage.text;
           else if (lastMessage.image) previewText = "Photo";
           else if (lastMessage.video) previewText = "Video";
@@ -776,6 +778,7 @@ export default function HomePage() {
   function resetCall() {
     stopRingtone();
     window.clearTimeout(callTimeoutRef.current);
+    window.clearTimeout(callConnectionFailTimeoutRef.current);
     peerConnectionRef.current?.close();
     peerConnectionRef.current = null;
     pendingOfferRef.current = null;
@@ -786,6 +789,7 @@ export default function HomePage() {
     activeCallHistoryIdRef.current = "";
     stopCallMedia();
     setIsCallMinimized(false);
+    setCallHasVideo(false);
     setCallState({ status: "idle", direction: "", peer: null, muted: false, speakerOn: false, cameraOff: false, type: "audio", startedAt: null });
   }
 
@@ -835,10 +839,20 @@ export default function HomePage() {
     );
   }
 
+  function markCallAsVideo() {
+    setCallHasVideo(true);
+    if (callStateRef.current.type !== "video") {
+      setCallState((prev) => ({ ...prev, type: "video" }));
+    }
+  }
+
   function attachRemoteMediaStream(remoteStream) {
     if (!remoteStream || !remoteAudioRef.current) return;
 
     remoteStreamRef.current = remoteStream;
+    if (remoteStream.getVideoTracks().length > 0) {
+      markCallAsVideo();
+    }
     remoteAudioRef.current.autoplay = true;
     remoteAudioRef.current.playsInline = true;
     remoteAudioRef.current.srcObject = remoteStream;
@@ -859,7 +873,11 @@ export default function HomePage() {
   }
 
   function attachLocalVideoStream(localStream) {
-    if (!localVideoRef.current || !localStream) return;
+    if (!localStream) return;
+    if (localStream.getVideoTracks().length > 0) {
+      setCallHasVideo(true);
+    }
+    if (!localVideoRef.current) return;
     localVideoRef.current.muted = true;
     localVideoRef.current.autoplay = true;
     localVideoRef.current.playsInline = true;
@@ -1082,10 +1100,18 @@ export default function HomePage() {
     };
 
     peerConnection.onconnectionstatechange = () => {
+      if (["connected", "completed"].includes(peerConnection.connectionState)) {
+        window.clearTimeout(callConnectionFailTimeoutRef.current);
+        return;
+      }
+
       if (["failed", "closed"].includes(peerConnection.connectionState)) {
-        if (callStateRef.current.status !== "idle") {
+        window.clearTimeout(callConnectionFailTimeoutRef.current);
+        callConnectionFailTimeoutRef.current = window.setTimeout(() => {
+          if (callStateRef.current.status === "idle") return;
+          if (!["failed", "closed"].includes(peerConnection.connectionState)) return;
           resetCall();
-        }
+        }, 3500);
       }
     };
 
@@ -1104,6 +1130,7 @@ export default function HomePage() {
       callIdRef.current = "";
       queuedIceCandidatesRef.current = [];
       setIsCallMinimized(false);
+      setCallHasVideo(callType === "video");
       setCallState({
         status: "calling",
         direction: "outgoing",
@@ -1241,6 +1268,7 @@ export default function HomePage() {
       pendingOfferRef.current = payload.offer;
       queuedIceCandidatesRef.current = [];
       setIsCallMinimized(false);
+      setCallHasVideo(payload.callType === "video" || payload.type === "video" || payload.isVideoCall === true);
       setCallState({
         status: "ringing",
         direction: "incoming",
@@ -1248,7 +1276,7 @@ export default function HomePage() {
         muted: false,
         speakerOn: false,
         cameraOff: false,
-        type: payload.callType === "video" ? "video" : "audio",
+        type: payload.callType === "video" || payload.type === "video" || payload.isVideoCall === true ? "video" : "audio",
         startedAt: null,
       });
       return;

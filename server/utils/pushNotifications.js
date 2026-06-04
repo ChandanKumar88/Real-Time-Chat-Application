@@ -26,7 +26,7 @@ function configureWebPush() {
 function getMessageNotificationBody(message) {
   if (message.image) return "Photo";
   if (message.video) return "Video";
-  if (message.callType) return "Voice call";
+  if (message.callType) return message.callType === "video" ? "Video call" : "Voice call";
   if (message.encrypted || message.encryptedPayload) return "New encrypted message";
   return message.text || "New message";
 }
