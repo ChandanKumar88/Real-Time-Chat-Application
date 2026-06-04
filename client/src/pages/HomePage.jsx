@@ -847,9 +847,7 @@ export default function HomePage() {
     if (callStateRef.current.speakerOn) {
       applySpeakerOutput(true).catch(() => null);
     }
-    remoteAudioRef.current.play().catch(() => {
-      toast.error("Audio blocked hai. Call screen par ek baar tap karke audio allow karo.");
-    });
+    remoteAudioRef.current.play().catch(() => null);
 
     if (remoteVideoRef.current) {
       remoteVideoRef.current.autoplay = true;
@@ -867,6 +865,12 @@ export default function HomePage() {
     localVideoRef.current.playsInline = true;
     localVideoRef.current.srcObject = localStream;
     localVideoRef.current.play().catch(() => null);
+  }
+
+  function retryCallMediaPlayback() {
+    remoteAudioRef.current?.play?.().catch(() => null);
+    remoteVideoRef.current?.play?.().catch(() => null);
+    localVideoRef.current?.play?.().catch(() => null);
   }
 
   async function applySpeakerOutput(enabled) {
@@ -958,19 +962,33 @@ export default function HomePage() {
 
   async function addLocalMediaTracks(peerConnection, callType = "audio") {
     if (localStreamRef.current) {
+      if (callType === "video" && localStreamRef.current.getVideoTracks().length === 0) {
+        const cameraStream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: {
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            facingMode: "user",
+          },
+        });
+        cameraStream.getVideoTracks().forEach((track) => localStreamRef.current.addTrack(track));
+      }
+
       localStreamRef.current.getAudioTracks().forEach((track) => {
         track.enabled = !callStateRef.current.muted;
         if (!peerConnection.getSenders().some((sender) => sender.track?.id === track.id)) {
           peerConnection.addTrack(track, localStreamRef.current);
         }
       });
-      localStreamRef.current.getVideoTracks().forEach((track) => {
-        track.enabled = !callStateRef.current.cameraOff;
-        if (!peerConnection.getSenders().some((sender) => sender.track?.id === track.id)) {
-          peerConnection.addTrack(track, localStreamRef.current);
-        }
-      });
-      attachLocalVideoStream(localStreamRef.current);
+      if (callType === "video") {
+        localStreamRef.current.getVideoTracks().forEach((track) => {
+          track.enabled = !callStateRef.current.cameraOff;
+          if (!peerConnection.getSenders().some((sender) => sender.track?.id === track.id)) {
+            peerConnection.addTrack(track, localStreamRef.current);
+          }
+        });
+        attachLocalVideoStream(localStreamRef.current);
+      }
       return;
     }
 
@@ -1102,7 +1120,6 @@ export default function HomePage() {
       await addLocalMediaTracks(peerConnection, callType);
       const offer = await peerConnection.createOffer();
       await peerConnection.setLocalDescription(offer);
-      await waitForIceGatheringComplete(peerConnection);
 
       await sendCallSignal("invite", selectedUser._id, { caller: getCallerSnapshot(), callType, offer: peerConnection.localDescription });
       await flushLocalIceCandidates(selectedUser._id);
@@ -1134,7 +1151,6 @@ export default function HomePage() {
 
       const answer = await peerConnection.createAnswer();
       await peerConnection.setLocalDescription(answer);
-      await waitForIceGatheringComplete(peerConnection);
       await sendCallSignal("accept", peerId, { answer: peerConnection.localDescription });
       await flushLocalIceCandidates(peerId);
 
@@ -1449,7 +1465,10 @@ export default function HomePage() {
       <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
 
       {shouldShowFullCallScreen && (
-        <div className="fixed inset-0 z-[70] flex min-h-[100dvh] flex-col overflow-hidden bg-[#111b21] text-white">
+        <div
+          className="fixed inset-0 z-[70] flex min-h-[100dvh] flex-col overflow-hidden bg-[#111b21] text-white"
+          onPointerDown={retryCallMediaPlayback}
+        >
           {isVideoActive && (
             <video
               ref={remoteVideoRef}
