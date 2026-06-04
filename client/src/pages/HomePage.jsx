@@ -1459,11 +1459,13 @@ export default function HomePage() {
             />
           )}
           <div
-            className={`absolute inset-0 ${isVideoActive ? "opacity-25" : "opacity-35"}`}
+            className={`absolute inset-0 ${isVideoActive ? "" : "opacity-35"}`}
             style={{
               backgroundImage:
-                `${isVideoActive ? "linear-gradient(rgba(17,27,33,0.25), rgba(17,27,33,0.42))" : "linear-gradient(rgba(17,27,33,0.88), rgba(17,27,33,0.92))"}, url(${bgImage})`,
-              backgroundSize: "cover, 430px",
+                isVideoActive
+                  ? "linear-gradient(rgba(0,0,0,0.16), rgba(0,0,0,0.28))"
+                  : `linear-gradient(rgba(17,27,33,0.88), rgba(17,27,33,0.92)), url(${bgImage})`,
+              backgroundSize: isVideoActive ? "cover" : "cover, 430px",
             }}
           />
           <div className="absolute inset-x-0 top-0 z-10 h-32 bg-gradient-to-b from-black/55 to-transparent" />
@@ -1494,6 +1496,11 @@ export default function HomePage() {
               <h2 className="mx-auto max-w-[78vw] truncate text-2xl font-semibold text-white sm:text-3xl">
                 {callState.peer?.fullName || "QuickChat user"}
               </h2>
+              {callState.status === "active" ? (
+                <p className="mt-1 text-lg font-semibold tabular-nums text-emerald-400 drop-shadow-[0_2px_10px_rgba(0,0,0,0.85)] sm:text-xl">
+                  {formatCallDuration(callState.startedAt)}
+                </p>
+              ) : null}
               <p className="mt-1 inline-flex items-center gap-2 text-sm text-white/60">
                 <FiLock className="text-xs" />
                 End-to-end encrypted
@@ -1519,9 +1526,9 @@ export default function HomePage() {
                   )}
                 </div>
               )}
-              {callState.status === "active" ? (
+              {callState.status === "active" && !isVideoActive ? (
                 <>
-                  <p className={`mt-6 text-2xl font-semibold tabular-nums text-emerald-400 sm:text-3xl ${isVideoActive ? "drop-shadow-[0_2px_10px_rgba(0,0,0,0.85)]" : ""}`}>
+                  <p className="mt-6 text-2xl font-semibold tabular-nums text-emerald-400 sm:text-3xl">
                     {formatCallDuration(callState.startedAt)}
                   </p>
                   <div className="quickchat-call-wave mt-5" aria-hidden="true">
@@ -1534,9 +1541,9 @@ export default function HomePage() {
                     <span />
                   </div>
                 </>
-              ) : (
+              ) : callState.status !== "active" ? (
                 <p className="mt-6 text-lg font-medium text-white/65">{getCallStatusText()}</p>
-              )}
+              ) : null}
             </div>
 
             <div className="mx-auto w-full max-w-[680px] rounded-[34px] border border-white/10 bg-black/40 px-4 py-4 shadow-2xl shadow-black/35 backdrop-blur-2xl sm:px-6 sm:py-5">
