@@ -6,6 +6,7 @@ import {
   FiDownload,
   FiLock,
   FiMenu,
+  FiMessageCircle,
   FiMic,
   FiMicOff,
   FiMinimize2,
@@ -84,6 +85,8 @@ export default function HomePage() {
   const [isSharedMediaOpen, setIsSharedMediaOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [activeDesktopTab, setActiveDesktopTab] = useState("chats");
+  const [mobileActiveTab, setMobileActiveTab] = useState("chats");
+  const [mobileCallSearch, setMobileCallSearch] = useState("");
   const [messageSearch, setMessageSearch] = useState("");
   const [activeSearchIndex, setActiveSearchIndex] = useState(0);
   const [searchJumpKey, setSearchJumpKey] = useState(0);
@@ -276,6 +279,15 @@ export default function HomePage() {
   }, [previewMedia]);
 
   const filteredUsers = useMemo(() => users, [users]);
+  const mobileFilteredUsers = useMemo(() => {
+    const keyword = search.trim().toLowerCase();
+    if (!keyword) return users;
+    return users.filter((item) => {
+      const name = item.fullName || "";
+      const email = item.email || "";
+      return name.toLowerCase().includes(keyword) || email.toLowerCase().includes(keyword);
+    });
+  }, [search, users]);
   const conversationPreviews = useMemo(
     () =>
       Object.fromEntries(
@@ -301,6 +313,15 @@ export default function HomePage() {
       ),
     [messagesCache, user?._id]
   );
+  const mobileFilteredCalls = useMemo(() => {
+    const keyword = mobileCallSearch.trim().toLowerCase();
+    if (!keyword) return callHistory;
+    return callHistory.filter((call) =>
+      [call.name, call.statusLabel, call.status, call.type, call.time]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(keyword))
+    );
+  }, [callHistory, mobileCallSearch]);
   const isSelectedUserTyping = Boolean(selectedUser && typingUsers[selectedUser._id]);
 
   async function handleForwardMessages({ messages: forwardMessages = [], users: targetUsers = [], note = "" }) {
@@ -606,6 +627,114 @@ export default function HomePage() {
 
   const isPortraitPreviewVideo = previewMedia?.type === "video" && previewVideoRatio && previewVideoRatio < 1;
   const isDesktopRightPanelOpen = activeDesktopTab === "chats" && (isSearchOpen || isSharedMediaOpen);
+
+  function formatMobileTime(value) {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+
+  function getMobileCallStatusClass(status) {
+    if (status === "missed") return "text-rose-400";
+    if (status === "received") return "text-emerald-500";
+    return theme === "dark" ? "text-sky-300" : "text-sky-600";
+  }
+
+  function renderMobileChatList() {
+    return (
+      <div className="chat-scroll min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-5 pb-[calc(96px+env(safe-area-inset-bottom))]">
+        {mobileFilteredUsers.map((item) => {
+          const preview = conversationPreviews[item._id];
+          const active = selectedUser?._id === item._id;
+          return (
+            <button
+              key={item._id}
+              type="button"
+              onClick={() => {
+                setSelectedUser(item);
+                setMobileActiveTab("chats");
+                setIsMediaOpen(false);
+                setIsSharedMediaOpen(false);
+                setIsSearchOpen(false);
+              }}
+              className={`flex w-full items-center gap-4 rounded-2xl px-1 py-3 text-left transition ${
+                active
+                  ? theme === "dark"
+                    ? "bg-violet-500/15"
+                    : "bg-violet-50"
+                  : theme === "dark"
+                    ? "hover:bg-white/5"
+                    : "hover:bg-slate-100"
+              }`}
+            >
+              <div className="relative shrink-0">
+                <ProfileAvatar src={item.profilePic} name={item.fullName} className="h-14 w-14 rounded-full object-cover" />
+                <span
+                  className={`absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 ${
+                    theme === "dark" ? "border-[#080d10]" : "border-white"
+                  } ${item.isOnline ? "bg-emerald-500" : "bg-slate-400"}`}
+                />
+              </div>
+              <div className="min-w-0 flex-1 border-b border-white/5 pb-3">
+                <div className="flex min-w-0 items-center justify-between gap-3">
+                  <p className={`truncate text-base font-semibold ${theme === "dark" ? "text-slate-100" : "text-slate-900"}`}>{item.fullName}</p>
+                  {preview?.createdAt && (
+                    <span className={`shrink-0 text-xs ${theme === "dark" ? "text-slate-500" : "text-slate-400"}`}>
+                      {formatMobileTime(preview.createdAt)}
+                    </span>
+                  )}
+                </div>
+                <div className="mt-1 flex min-w-0 items-center justify-between gap-2">
+                  <p className={`truncate text-sm ${preview ? (theme === "dark" ? "text-slate-400" : "text-slate-500") : item.isOnline ? "text-emerald-500" : "text-slate-500"}`}>
+                    {preview?.text || (item.isOnline ? "Online" : "Offline")}
+                  </p>
+                  {!!item.unreadCount && (
+                    <span className="inline-flex min-h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500 px-1.5 text-[11px] font-bold text-white shadow-lg shadow-emerald-500/30">
+                      {item.unreadCount > 99 ? "99+" : item.unreadCount}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </button>
+          );
+        })}
+        {mobileFilteredUsers.length === 0 && (
+          <div className={`mt-8 rounded-2xl px-4 py-8 text-center text-sm ${theme === "dark" ? "bg-white/5 text-slate-400" : "bg-slate-100 text-slate-500"}`}>
+            No users found.
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  function renderMobileCallList() {
+    return (
+      <div className="chat-scroll min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-5 pb-[calc(96px+env(safe-area-inset-bottom))]">
+        {mobileFilteredCalls.length ? (
+          mobileFilteredCalls.map((call) => (
+            <div key={call.id} className="flex items-center gap-4 rounded-2xl px-1 py-3">
+              <ProfileAvatar src={call.profilePic} name={call.name} className="h-14 w-14 rounded-full object-cover" />
+              <div className="min-w-0 flex-1 border-b border-white/5 pb-3">
+                <div className="flex min-w-0 items-center justify-between gap-3">
+                  <p className={`truncate text-base font-semibold ${theme === "dark" ? "text-slate-100" : "text-slate-900"}`}>{call.name}</p>
+                  {call.time && <span className={`shrink-0 text-xs ${theme === "dark" ? "text-slate-500" : "text-slate-400"}`}>{call.time}</span>}
+                </div>
+                <p className={`mt-1 flex items-center gap-1.5 truncate text-sm ${getMobileCallStatusClass(call.status)}`}>
+                  {call.type === "video" ? <FiVideo /> : <FiPhone />}
+                  {call.statusLabel || "Call"} {call.type === "video" ? "video call" : "voice call"}
+                </p>
+              </div>
+            </div>
+          ))
+        ) : (
+          <div className={`mt-8 rounded-2xl px-4 py-8 text-center text-sm ${theme === "dark" ? "bg-white/5 text-slate-400" : "bg-slate-100 text-slate-500"}`}>
+            {mobileCallSearch.trim() ? "No matching calls found." : "No call history yet."}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   async function unlockEncryptedChats(event) {
     event.preventDefault();
@@ -1453,7 +1582,7 @@ export default function HomePage() {
           backgroundPosition: "center",
         }}
       >
-      <div className="mb-2 flex shrink-0 items-center justify-between px-2 pt-2 lg:hidden">
+      <div className="mb-2 hidden shrink-0 items-center justify-between px-2 pt-2 md:flex lg:hidden">
         <button
           onClick={() => setIsSidebarOpen(true)}
           className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm shadow ${
@@ -1681,7 +1810,167 @@ export default function HomePage() {
         </div>
       )}
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 overflow-hidden px-2 pb-2 lg:grid-cols-12 lg:gap-3 lg:px-0 lg:pb-0">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden md:hidden">
+        {mobileActiveTab === "chats" && selectedUser ? (
+          <ChatContainer
+            user={user}
+            selectedUser={selectedUser}
+            messages={messages}
+            messagesLoading={messagesLoading}
+            olderMessagesLoading={Boolean(selectedMessagesPaging.loadingOlder)}
+            hasOlderMessages={Boolean(selectedMessagesPaging.hasMore)}
+            onLoadOlderMessages={() => (selectedUser ? loadOlderMessages(selectedUser._id) : Promise.resolve([]))}
+            text={text}
+            setText={setText}
+            onTextChange={(value) => {
+              setText(value);
+              if (selectedUser && value.trim()) {
+                emitTyping(selectedUser._id);
+              } else if (selectedUser) {
+                stopTyping(selectedUser._id);
+              }
+            }}
+            setImage={setImage}
+            setVideo={setVideo}
+            image={image}
+            video={video}
+            replyToMessage={replyToMessage}
+            isTyping={isSelectedUserTyping}
+            theme={theme}
+            onBackMobile={() => setSelectedUser(null)}
+            onOpenMedia={() => setIsMediaOpen(true)}
+            onOpenSharedMedia={() => {
+              setIsSearchOpen(false);
+              setIsSharedMediaOpen(true);
+            }}
+            onStartAudioCall={startAudioCall}
+            onStartVideoCall={handleStartVideoCall}
+            isCallDisabled={callState.status !== "idle" || selectedUser?.isBlocked}
+            onOpenSearchPanel={() => {
+              setIsSharedMediaOpen(false);
+              setIsSearchOpen(true);
+            }}
+            searchKeyword={messageSearch}
+            activeSearchMessageId={activeSearchMessageId}
+            searchJumpKey={searchJumpKey}
+            onPreviewMedia={openPreview}
+            forwardUsers={users}
+            onForwardMessages={handleForwardMessages}
+            onReplyMessage={setReplyToMessage}
+            onCancelReply={() => setReplyToMessage(null)}
+            onDeleteMessages={async (messageIds) => {
+              if (!messageIds?.length) return;
+              const confirmed = window.confirm(`Delete ${messageIds.length} selected message${messageIds.length === 1 ? "" : "s"}?`);
+              if (!confirmed) return;
+              try {
+                await Promise.all(messageIds.map((messageId) => deleteMessage(messageId)));
+              } catch (error) {
+                toast.error(error?.response?.data?.message || "Failed to delete selected messages");
+                throw error;
+              }
+            }}
+            onDeleteMessage={async (messageId) => {
+              const confirmed = window.confirm("Delete this message?");
+              if (!confirmed) return;
+              try {
+                await deleteMessage(messageId);
+              } catch (error) {
+                toast.error(error?.response?.data?.message || "Failed to delete message");
+              }
+            }}
+            onSend={async (e) => {
+              e.preventDefault();
+              if (!selectedUser || (!text.trim() && !image && !video)) return;
+              const isUploadedVideoUrl = /^https?:\/\//i.test(video);
+              const payload = {
+                text: text.trim(),
+                image,
+                video: isUploadedVideoUrl ? "" : video,
+                videoUrl: isUploadedVideoUrl ? video : "",
+                replyTo: replyToMessage?._id || null,
+              };
+              setText("");
+              setImage("");
+              setVideo("");
+              setReplyToMessage(null);
+              stopTyping(selectedUser._id);
+              try {
+                await sendMessage(selectedUser._id, payload);
+              } catch (error) {
+                setText(payload.text);
+                setImage(payload.image);
+                setVideo(payload.videoUrl || payload.video);
+                setReplyToMessage(replyToMessage);
+                toast.error(getSendErrorMessage(error, payload));
+              }
+            }}
+          />
+        ) : (
+          <section className={`flex h-full min-h-0 flex-col overflow-hidden ${theme === "dark" ? "bg-[#071014]/88" : "bg-slate-50/95"}`}>
+            <div className="shrink-0 px-6 pb-3 pt-[calc(28px+env(safe-area-inset-top))]">
+              <h1 className={`text-4xl font-bold tracking-normal ${theme === "dark" ? "text-white" : "text-slate-950"}`}>QuickChat</h1>
+              <div className="relative mt-6">
+                <FiSearch className={`pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 text-2xl ${theme === "dark" ? "text-slate-400" : "text-slate-500"}`} />
+                <input
+                  className={`h-16 w-full rounded-full border-0 py-3 pl-14 pr-5 text-lg outline-none transition focus:ring-2 focus:ring-violet-400/60 ${
+                    theme === "dark"
+                      ? "bg-white/10 text-slate-100 placeholder:text-slate-400"
+                      : "bg-white text-slate-900 shadow-sm placeholder:text-slate-500"
+                  }`}
+                  placeholder={mobileActiveTab === "chats" ? "Search users..." : "Search name"}
+                  value={mobileActiveTab === "chats" ? search : mobileCallSearch}
+                  onChange={(event) => {
+                    if (mobileActiveTab === "chats") setSearch(event.target.value);
+                    else setMobileCallSearch(event.target.value);
+                  }}
+                />
+              </div>
+            </div>
+            {mobileActiveTab === "chats" ? renderMobileChatList() : renderMobileCallList()}
+            <nav
+              className={`fixed inset-x-0 bottom-0 z-20 border-t px-8 pb-[calc(12px+env(safe-area-inset-bottom))] pt-2 ${
+                theme === "dark" ? "border-white/5 bg-[#071014]/95 shadow-[0_-18px_35px_rgba(0,0,0,0.32)]" : "border-slate-200 bg-white/95 shadow-[0_-18px_35px_rgba(15,23,42,0.08)]"
+              }`}
+            >
+              <div className="grid grid-cols-2 gap-5">
+                {[
+                  { id: "chats", label: "Chats", icon: FiMessageCircle },
+                  { id: "calls", label: "Calls", icon: FiPhone },
+                ].map((tab) => {
+                  const Icon = tab.icon;
+                  const active = mobileActiveTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => {
+                        setMobileActiveTab(tab.id);
+                        if (tab.id === "calls") setSelectedUser(null);
+                      }}
+                      className={`flex flex-col items-center gap-1 rounded-2xl px-4 py-2 text-sm font-semibold transition ${
+                        active
+                          ? theme === "dark"
+                            ? "text-white"
+                            : "text-violet-700"
+                          : theme === "dark"
+                            ? "text-slate-400"
+                            : "text-slate-500"
+                      }`}
+                    >
+                      <span className={`grid h-10 w-16 place-items-center rounded-full ${active ? "bg-violet-500/25" : "bg-transparent"}`}>
+                        <Icon className="text-2xl" />
+                      </span>
+                      {tab.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </nav>
+          </section>
+        )}
+      </div>
+
+      <div className="hidden min-h-0 flex-1 grid-cols-1 gap-2 overflow-hidden px-2 pb-2 md:grid lg:grid-cols-12 lg:gap-3 lg:px-0 lg:pb-0">
       <div className="hidden min-h-0 lg:col-span-4 lg:block lg:h-full xl:col-span-3">
         <Sidebar
           users={filteredUsers}
@@ -1982,6 +2271,7 @@ export default function HomePage() {
           />
         </div>
       ) : null}
+      </div>
 
       {isMediaOpen && selectedUser ? (
         <RightSidebar
@@ -2220,7 +2510,6 @@ export default function HomePage() {
           </div>
         </div>
       ) : null}
-      </div>
       </div>
     </div>
   );

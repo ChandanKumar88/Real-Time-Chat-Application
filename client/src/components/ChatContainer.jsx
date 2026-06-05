@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import toast from "react-hot-toast";
 import {
+  FiArrowLeft,
   FiCheckSquare,
   FiChevronDown,
   FiCopy,
@@ -73,6 +74,7 @@ export default function ChatContainer({
   onOpenMedia,
   onOpenSharedMedia,
   onOpenSearchPanel,
+  onBackMobile,
   searchKeyword = "",
   activeSearchMessageId = "",
   searchJumpKey = 0,
@@ -745,6 +747,29 @@ export default function ChatContainer({
           aria-label="Open contact info"
           title="Open contact info"
         >
+          {onBackMobile && (
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(event) => {
+                event.stopPropagation();
+                onBackMobile();
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onBackMobile();
+                }
+              }}
+              className={`mr-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full md:hidden ${
+                isDark ? "text-slate-200 hover:bg-white/10" : "text-slate-700 hover:bg-slate-100"
+              }`}
+              aria-label="Back to chats"
+            >
+              <FiArrowLeft className="text-xl" />
+            </span>
+          )}
           <ProfileAvatar src={selectedUser.profilePic} name={selectedUser.fullName} className="h-8 w-8 shrink-0 rounded-full object-cover sm:h-9 sm:w-9 lg:h-12 lg:w-12" />
           <div className="min-w-0">
             <p className={`truncate text-sm font-semibold lg:text-lg ${isDark ? "text-slate-100" : "text-slate-900"}`}>{selectedUser.fullName}</p>
