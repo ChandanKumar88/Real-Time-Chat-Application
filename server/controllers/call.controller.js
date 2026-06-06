@@ -23,7 +23,7 @@ async function createCallEvent(req, res, type) {
     return res.status(400).json({ success: false, message: "Invalid call receiver" });
   }
 
-  const nextCallId = type === "invite" ? crypto.randomUUID() : callId;
+  const nextCallId = type === "invite" ? callId || crypto.randomUUID() : callId;
   if (!nextCallId) {
     return res.status(400).json({ success: false, message: "Call id is required" });
   }

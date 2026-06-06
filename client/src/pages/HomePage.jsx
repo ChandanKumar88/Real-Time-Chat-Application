@@ -33,6 +33,7 @@ import RightSidebar from "../components/RightSidebar";
 import ProfileAvatar from "../components/ProfileAvatar";
 import bgImage from "../assets/bgImage.svg";
 import { processImageFile } from "../utils/image";
+import { createCallMediaE2ee } from "../utils/callMediaE2ee";
 
 const CALL_EVENT_POLL_INTERVAL_MS = 900;
 
@@ -124,6 +125,7 @@ export default function HomePage() {
   const localVideoRef = useRef(null);
   const remoteStreamRef = useRef(null);
   const peerConnectionRef = useRef(null);
+  const callMediaE2eeRef = useRef(null);
   const localStreamRef = useRef(null);
   const pendingOfferRef = useRef(null);
   const callPeerIdRef = useRef("");
@@ -134,6 +136,8 @@ export default function HomePage() {
   const lastCallEventAtRef = useRef(new Date(Date.now() - 60_000).toISOString());
   const processedCallEventsRef = useRef(new Set());
   const pendingLocalIceCandidatesRef = useRef([]);
+  const protectedCallSendersRef = useRef(new WeakSet());
+  const protectedCallReceiversRef = useRef(new WeakSet());
   const activeCallHistoryIdRef = useRef("");
   const speakerSinkIdRef = useRef("");
   const speakerAudioContextRef = useRef(null);
@@ -847,7 +851,33 @@ export default function HomePage() {
       _id: user._id,
       fullName: user.fullName,
       profilePic: user.profilePic || "",
+      publicKey: user.publicKey || "",
     };
+  }
+
+  function createLocalCallId() {
+    if (crypto?.randomUUID) return crypto.randomUUID();
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  }
+
+  async function ensureCallMediaE2ee() {
+    if (callMediaE2eeRef.current) return callMediaE2eeRef.current;
+
+    callMediaE2eeRef.current = await createCallMediaE2ee();
+    return callMediaE2eeRef.current;
+  }
+
+  function protectCallSender(sender) {
+    if (!sender || protectedCallSendersRef.current.has(sender)) return;
+    callMediaE2eeRef.current?.protectSender(sender);
+    protectedCallSendersRef.current.add(sender);
+  }
+
+  function protectCallReceiver(receiver) {
+    if (!receiver || protectedCallReceiversRef.current.has(receiver)) return;
+    callMediaE2eeRef.current?.protectReceiver(receiver);
+    protectedCallReceiversRef.current.add(receiver);
   }
 
   function getRingtoneAudioContext() {
@@ -982,11 +1012,15 @@ export default function HomePage() {
     window.clearTimeout(callConnectionFailTimeoutRef.current);
     peerConnectionRef.current?.close();
     peerConnectionRef.current = null;
+    callMediaE2eeRef.current?.close?.();
+    callMediaE2eeRef.current = null;
     pendingOfferRef.current = null;
     callPeerIdRef.current = "";
     callIdRef.current = "";
     queuedIceCandidatesRef.current = [];
     pendingLocalIceCandidatesRef.current = [];
+    protectedCallSendersRef.current = new WeakSet();
+    protectedCallReceiversRef.current = new WeakSet();
     activeCallHistoryIdRef.current = "";
     stopCallMedia();
     setIsCallMinimized(false);
@@ -1196,14 +1230,16 @@ export default function HomePage() {
       localStreamRef.current.getAudioTracks().forEach((track) => {
         track.enabled = !callStateRef.current.muted;
         if (!peerConnection.getSenders().some((sender) => sender.track?.id === track.id)) {
-          peerConnection.addTrack(track, localStreamRef.current);
+          const sender = peerConnection.addTrack(track, localStreamRef.current);
+          protectCallSender(sender);
         }
       });
       if (callType === "video") {
         localStreamRef.current.getVideoTracks().forEach((track) => {
           track.enabled = !callStateRef.current.cameraOff;
           if (!peerConnection.getSenders().some((sender) => sender.track?.id === track.id)) {
-            peerConnection.addTrack(track, localStreamRef.current);
+            const sender = peerConnection.addTrack(track, localStreamRef.current);
+            protectCallSender(sender);
           }
         });
         attachLocalVideoStream(localStreamRef.current);
@@ -1236,11 +1272,13 @@ export default function HomePage() {
 
     audioTracks.forEach((track) => {
       track.enabled = !callStateRef.current.muted;
-      peerConnection.addTrack(track, localStream);
+      const sender = peerConnection.addTrack(track, localStream);
+      protectCallSender(sender);
     });
     localStream.getVideoTracks().forEach((track) => {
       track.enabled = !callStateRef.current.cameraOff;
-      peerConnection.addTrack(track, localStream);
+      const sender = peerConnection.addTrack(track, localStream);
+      protectCallSender(sender);
     });
   }
 
@@ -1274,6 +1312,8 @@ export default function HomePage() {
       throw new Error("Browser microphone calling support nahi kar raha.");
     }
 
+    await ensureCallMediaE2ee();
+
     const peerConnection = new RTCPeerConnection({
       iceServers: getCallIceServers(),
       iceCandidatePoolSize: 4,
@@ -1293,6 +1333,7 @@ export default function HomePage() {
     };
 
     peerConnection.ontrack = (event) => {
+      protectCallReceiver(event.receiver);
       const remoteStream = event.streams?.[0] || remoteStreamRef.current || new MediaStream();
       if (!event.streams?.[0] && event.track && !remoteStream.getTracks().some((track) => track.id === event.track.id)) {
         remoteStream.addTrack(event.track);
@@ -1328,7 +1369,7 @@ export default function HomePage() {
 
     try {
       callPeerIdRef.current = selectedUser._id;
-      callIdRef.current = "";
+      callIdRef.current = createLocalCallId();
       queuedIceCandidatesRef.current = [];
       setIsCallMinimized(false);
       setCallHasVideo(callType === "video");

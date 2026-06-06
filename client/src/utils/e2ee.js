@@ -229,3 +229,23 @@ export async function decryptText({ encryptedPayload, myUserId, peerPublicKey })
     return null;
   }
 }
+
+export async function deriveCallMediaKey({ myUserId, peerPublicKey, callId }) {
+  if (!myUserId || !peerPublicKey || !callId) {
+    throw new Error("Call encryption key material is missing");
+  }
+
+  const localKeyPair = getLocalKeyPair(myUserId);
+  if (!localKeyPair) {
+    throw new Error("Encrypted chat key is missing on this device");
+  }
+
+  const privateKey = await importPrivateKey(localKeyPair.privateJwk);
+  const publicKey = await importPublicKey(peerPublicKey);
+  const key = await deriveConversationKey(privateKey, publicKey);
+
+  return {
+    key,
+    additionalData: new TextEncoder().encode(`quickchat-call-media-frame-v1:${callId}`),
+  };
+}
