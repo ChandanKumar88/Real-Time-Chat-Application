@@ -2306,6 +2306,90 @@ export default function HomePage() {
         />
       ) : null}
 
+      {isSearchOpen && selectedUser ? (
+        <aside
+          className={`fixed inset-0 z-50 flex min-h-[100dvh] flex-col overflow-hidden p-4 md:hidden ${
+            theme === "dark" ? "bg-[#0f1118] text-slate-100" : "bg-white text-slate-900"
+          }`}
+        >
+          <div className="mb-5 flex shrink-0 items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h3 className="truncate text-xl font-semibold">Search messages</h3>
+              <p className={`text-sm ${theme === "dark" ? "text-slate-400" : "text-slate-500"}`}>Only in current chat</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsSearchOpen(false)}
+              className={`grid h-10 w-10 shrink-0 place-items-center rounded-full ${
+                theme === "dark" ? "text-slate-300 hover:bg-white/10" : "text-slate-600 hover:bg-slate-100"
+              }`}
+              aria-label="Close search"
+            >
+              <FiX />
+            </button>
+          </div>
+
+          <div className="relative mb-4 shrink-0">
+            <FiSearch className={`pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-lg ${theme === "dark" ? "text-slate-400" : "text-slate-500"}`} />
+            <input
+              value={messageSearch}
+              onChange={(event) => setMessageSearch(event.target.value)}
+              placeholder="Search in this chat..."
+              className={`h-14 w-full rounded-2xl py-3 pl-12 pr-4 text-base outline-none transition focus:border-violet-400 ${
+                theme === "dark"
+                  ? "border border-white/10 bg-[#2a2553]/75 text-slate-200 placeholder:text-slate-400"
+                  : "border border-slate-300 bg-slate-50 text-slate-800 placeholder:text-slate-500"
+              }`}
+              autoFocus
+            />
+          </div>
+
+          <div className={`mb-3 flex shrink-0 items-center justify-between text-sm ${theme === "dark" ? "text-slate-400" : "text-slate-500"}`}>
+            <span>{messageSearch.trim() ? `${messageSearchResults.length} result${messageSearchResults.length === 1 ? "" : "s"}` : "Type a keyword"}</span>
+            {messageSearchResults.length > 0 && (
+              <span>
+                {activeSearchIndex + 1}/{messageSearchResults.length}
+              </span>
+            )}
+          </div>
+
+          <div className="chat-scroll min-h-0 flex-1 space-y-2 overflow-x-hidden overflow-y-auto pr-1">
+            {messageSearchResults.map((result, index) => {
+              const isActive = index === activeSearchIndex;
+              return (
+                <button
+                  key={result._id}
+                  type="button"
+                  onClick={() => {
+                    jumpToSearchResult(index);
+                    setIsSearchOpen(false);
+                  }}
+                  className={`w-full rounded-2xl border px-3 py-3 text-left transition ${
+                    isActive
+                      ? theme === "dark"
+                        ? "border-amber-300/60 bg-amber-300/10"
+                        : "border-amber-300 bg-amber-50"
+                      : theme === "dark"
+                        ? "border-white/10 bg-white/5 hover:bg-white/10"
+                        : "border-slate-200 bg-white/80 hover:bg-slate-100"
+                  }`}
+                >
+                  <p className={`mb-1 text-xs ${result.senderId === user?._id ? "text-violet-300" : theme === "dark" ? "text-slate-400" : "text-slate-500"}`}>
+                    {result.senderId === user?._id ? "You" : selectedUser.fullName} - {formatPanelTime(result.createdAt)}
+                  </p>
+                  <p className={`line-clamp-2 text-sm ${theme === "dark" ? "text-slate-100" : "text-slate-800"}`}>{result.text}</p>
+                </button>
+              );
+            })}
+            {messageSearch.trim() && messageSearchResults.length === 0 && (
+              <p className={`rounded-2xl px-3 py-8 text-center text-sm ${theme === "dark" ? "bg-white/5 text-slate-400" : "bg-slate-100 text-slate-500"}`}>
+                No matching message found.
+              </p>
+            )}
+          </div>
+        </aside>
+      ) : null}
+
       {previewMedia ? (
         <div className="fixed inset-0 z-[60] flex min-h-[100dvh] flex-col overflow-hidden bg-[#111312] text-white">
           <div className="flex h-[74px] shrink-0 items-center justify-between border-b border-white/10 bg-[#1b1d1c] px-4 sm:px-8">

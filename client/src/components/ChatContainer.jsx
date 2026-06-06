@@ -7,7 +7,6 @@ import {
   FiChevronDown,
   FiCopy,
   FiCornerUpLeft,
-  FiGrid,
   FiImage,
   FiLock,
   FiPhone,
@@ -823,11 +822,12 @@ export default function ChatContainer({
           </button>
           <button
             type="button"
-            onClick={onOpenMedia}
+            onClick={onOpenSearchPanel}
             className={`inline-flex h-8 w-8 items-center justify-center rounded-lg lg:hidden sm:h-9 sm:w-9 ${isDark ? "border border-white/10 bg-white/5 text-slate-300" : "border border-slate-200 bg-white text-slate-700"}`}
-            title="Open media"
+            title="Search messages"
+            aria-label="Search messages"
           >
-            <FiGrid />
+            <FiSearch />
           </button>
           <div className="hidden items-center gap-5 lg:flex">
             <button
