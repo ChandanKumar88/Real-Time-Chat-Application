@@ -71,6 +71,8 @@ function mergeMessagesById(currentMessages = [], incomingMessages = []) {
 export function ChatProvider({ children }) {
   const { user, setUser } = useAuth();
   const [users, setUsers] = useState([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [usersLoaded, setUsersLoaded] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   const [messages, setMessages] = useState([]);
   const [messagesCache, setMessagesCache] = useState({});
@@ -147,6 +149,14 @@ export function ChatProvider({ children }) {
     setMessagesCache(nextCache);
     prefetchedUserIdsRef.current = new Set(Object.keys(nextCache));
   }, [user?._id]);
+
+  useEffect(() => {
+    if (user?._id && !user.encryptionPassphraseRequired) return;
+
+    setUsers([]);
+    setUsersLoading(false);
+    setUsersLoaded(false);
+  }, [user?._id, user?.encryptionPassphraseRequired]);
 
   useEffect(() => {
     if (!user?._id) return;
@@ -442,8 +452,14 @@ export function ChatProvider({ children }) {
   }, [user, selectedUser]);
 
   async function loadUsers() {
-    const { data } = await api.get("/users");
-    setUsers(data.data.map((u) => ({ ...u, isOnline: Boolean(u.isOnline) || onlineUserIdsRef.current.has(u._id) })));
+    setUsersLoading(true);
+    try {
+      const { data } = await api.get("/users");
+      setUsers(data.data.map((u) => ({ ...u, isOnline: Boolean(u.isOnline) || onlineUserIdsRef.current.has(u._id) })));
+      setUsersLoaded(true);
+    } finally {
+      setUsersLoading(false);
+    }
   }
 
   async function loadMessages(userId, options = {}) {
@@ -758,6 +774,8 @@ export function ChatProvider({ children }) {
   const value = useMemo(
     () => ({
       users,
+      usersLoading,
+      usersLoaded,
       selectedUser,
       setSelectedUser: selectUser,
       loadUsers,
@@ -782,7 +800,7 @@ export function ChatProvider({ children }) {
       stopTyping,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [users, selectedUser, messages, messagesCache, messagesPaging, messagesLoading, socket, socketConnected, typingUsers]
+    [users, usersLoading, usersLoaded, selectedUser, messages, messagesCache, messagesPaging, messagesLoading, socket, socketConnected, typingUsers]
   );
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;

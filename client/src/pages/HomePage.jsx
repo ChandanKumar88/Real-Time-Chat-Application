@@ -57,6 +57,8 @@ export default function HomePage() {
   const { user, setUser, logout, setupEncryptionPassphrase } = useAuth();
   const {
     users,
+    usersLoading,
+    usersLoaded,
     loadUsers,
     selectedUser,
     setSelectedUser,
@@ -303,6 +305,8 @@ export default function HomePage() {
       return name.toLowerCase().includes(keyword) || email.toLowerCase().includes(keyword);
     });
   }, [search, users]);
+  const showInitialUsersLoading = usersLoading && !usersLoaded;
+  const showNoMobileUsersFound = usersLoaded && mobileFilteredUsers.length === 0;
   const conversationPreviews = useMemo(
     () =>
       Object.fromEntries(
@@ -699,7 +703,20 @@ export default function HomePage() {
   function renderMobileChatList() {
     return (
       <div className="chat-scroll min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-5 pb-[calc(96px+env(safe-area-inset-bottom))]">
-        {mobileFilteredUsers.map((item) => {
+        {showInitialUsersLoading && (
+          <div className="mt-5 space-y-4" aria-label="Loading users">
+            {Array.from({ length: 5 }).map((_, index) => (
+              <div key={index} className="flex animate-pulse items-center gap-4 rounded-2xl px-1 py-3">
+                <div className={`h-14 w-14 shrink-0 rounded-full ${theme === "dark" ? "bg-white/10" : "bg-slate-200"}`} />
+                <div className="min-w-0 flex-1 space-y-3">
+                  <div className={`h-4 w-2/5 rounded-full ${theme === "dark" ? "bg-white/10" : "bg-slate-200"}`} />
+                  <div className={`h-3 w-3/5 rounded-full ${theme === "dark" ? "bg-white/5" : "bg-slate-100"}`} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {!showInitialUsersLoading && mobileFilteredUsers.map((item) => {
           const preview = conversationPreviews[item._id];
           const active = selectedUser?._id === item._id;
           return (
@@ -754,7 +771,7 @@ export default function HomePage() {
             </button>
           );
         })}
-        {mobileFilteredUsers.length === 0 && (
+        {showNoMobileUsersFound && (
           <div className={`mt-8 rounded-2xl px-4 py-8 text-center text-sm ${theme === "dark" ? "bg-white/5 text-slate-400" : "bg-slate-100 text-slate-500"}`}>
             No users found.
           </div>
