@@ -12,10 +12,9 @@ self.addEventListener("push", (event) => {
         type: "window",
         includeUncontrolled: true,
       });
-      const hasFocusedQuickChat = windowClients.some((client) => client.focused);
-      if (hasFocusedQuickChat) return;
-
       const isIncomingCall = data.type === "incoming-call";
+      const hasFocusedQuickChat = windowClients.some((client) => client.focused);
+      if (hasFocusedQuickChat && !isIncomingCall) return;
 
       await self.registration.showNotification(data.title || "QuickChat", {
         body: data.body || "New message",

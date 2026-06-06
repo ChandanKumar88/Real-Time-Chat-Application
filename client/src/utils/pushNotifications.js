@@ -4,6 +4,7 @@ let setupComplete = false;
 let setupInFlight = false;
 let retryTimer = null;
 let firstInteractionListenerAdded = false;
+let passiveRetryListenersAdded = false;
 
 function urlBase64ToUint8Array(base64String) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -62,6 +63,11 @@ function scheduleRetry() {
   }, 15000);
 }
 
+function retrySubscriptionIfAllowed() {
+  if (setupComplete || !isPushSupported() || Notification.permission !== "granted") return;
+  subscribeCurrentBrowser({ requestPermission: false }).catch(() => scheduleRetry());
+}
+
 async function subscribeCurrentBrowser({ requestPermission = true } = {}) {
   if (!isPushSupported()) return false;
   if (setupInFlight) return false;
@@ -118,8 +124,15 @@ export function setupPushNotifications() {
   };
 
   window.addEventListener("pointerdown", handleFirstInteraction, { once: true });
+  window.addEventListener("touchstart", handleFirstInteraction, { once: true });
   window.addEventListener("keydown", handleFirstInteraction, { once: true });
-  window.addEventListener("focus", () => subscribeCurrentBrowser({ requestPermission: false }).catch(() => null), { once: true });
+
+  if (!passiveRetryListenersAdded) {
+    passiveRetryListenersAdded = true;
+    window.addEventListener("focus", retrySubscriptionIfAllowed);
+    window.addEventListener("online", retrySubscriptionIfAllowed);
+    document.addEventListener("visibilitychange", retrySubscriptionIfAllowed);
+  }
 }
 
 export async function unregisterPushNotifications() {
@@ -143,4 +156,8 @@ export async function unregisterPushNotifications() {
   setupComplete = false;
   setupInFlight = false;
   firstInteractionListenerAdded = false;
+  window.removeEventListener("focus", retrySubscriptionIfAllowed);
+  window.removeEventListener("online", retrySubscriptionIfAllowed);
+  document.removeEventListener("visibilitychange", retrySubscriptionIfAllowed);
+  passiveRetryListenersAdded = false;
 }

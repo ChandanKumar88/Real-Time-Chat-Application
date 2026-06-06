@@ -898,11 +898,30 @@ export default function HomePage() {
     ringtoneTimersRef.current = [];
   }
 
+  function closeIncomingCallNotifications() {
+    callNotificationRef.current?.close?.();
+    callNotificationRef.current = null;
+
+    if (!("serviceWorker" in navigator)) return;
+    const activeCallId = callIdRef.current;
+    navigator.serviceWorker.getRegistration()
+      .then((registration) =>
+        activeCallId
+          ? registration?.getNotifications?.({ tag: `quickchat-call-${activeCallId}` })
+          : registration?.getNotifications?.()
+      )
+      .then((notifications = []) =>
+        notifications
+          .filter((notification) => !notification.tag || notification.tag.startsWith("quickchat-call-"))
+          .forEach((notification) => notification.close())
+      )
+      .catch(() => null);
+  }
+
   function stopRingtone() {
     clearRingtoneTimers();
     ringtoneKindRef.current = "";
-    callNotificationRef.current?.close?.();
-    callNotificationRef.current = null;
+    closeIncomingCallNotifications();
   }
 
   function playRingtone(kind) {
@@ -958,21 +977,46 @@ export default function HomePage() {
     ringtoneIntervalRef.current = window.setInterval(playPattern, loopMs);
   }
 
+  async function showBrowserNotification(title, options) {
+    if ("serviceWorker" in navigator) {
+      const registration = await navigator.serviceWorker.getRegistration();
+      if (registration?.showNotification) {
+        await registration.showNotification(title, options);
+        return true;
+      }
+    }
+
+    if (typeof Notification === "function") {
+      callNotificationRef.current?.close?.();
+      callNotificationRef.current = new Notification(title, options);
+      return true;
+    }
+
+    return false;
+  }
+
   function showIncomingCallNotification(peer) {
-    if (!peer || !("Notification" in window) || !document.hidden) return;
+    if (!peer || !("Notification" in window)) return;
 
     const title = `${peer.fullName || "QuickChat user"} is calling you`;
     const callTypeLabel = callStateRef.current.type === "video" ? "video" : "voice";
     const options = {
       body: `Incoming ${callTypeLabel} call`,
       icon: peer.profilePic || "/favicon.svg",
-      tag: "quickchat-incoming-call",
+      badge: "/favicon.svg",
+      tag: `quickchat-call-${callIdRef.current || peer._id}`,
+      requireInteraction: true,
       renotify: true,
+      silent: false,
+      vibrate: [500, 180, 500, 180, 900, 250, 900],
+      data: {
+        type: "incoming-call",
+        url: "/",
+      },
     };
 
     if (Notification.permission === "granted") {
-      callNotificationRef.current?.close?.();
-      callNotificationRef.current = new Notification(title, options);
+      showBrowserNotification(title, options).catch(() => null);
       return;
     }
 
@@ -981,8 +1025,7 @@ export default function HomePage() {
       permissionRequest
         ?.then?.((permission) => {
           if (permission !== "granted" || callStateRef.current.status !== "ringing") return;
-          callNotificationRef.current?.close?.();
-          callNotificationRef.current = new Notification(title, options);
+          showBrowserNotification(title, options).catch(() => null);
         })
         ?.catch?.(() => null);
     }
