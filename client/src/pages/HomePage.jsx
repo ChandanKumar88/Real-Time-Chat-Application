@@ -5,6 +5,7 @@ import {
   FiChevronRight,
   FiDownload,
   FiLock,
+  FiLogOut,
   FiMenu,
   FiMessageCircle,
   FiMic,
@@ -17,6 +18,7 @@ import {
   FiRotateCcw,
   FiSearch,
   FiShare2,
+  FiUser,
   FiVideo,
   FiVideoOff,
   FiVolume2,
@@ -30,6 +32,7 @@ import ChatContainer from "../components/ChatContainer";
 import RightSidebar from "../components/RightSidebar";
 import ProfileAvatar from "../components/ProfileAvatar";
 import bgImage from "../assets/bgImage.svg";
+import { processImageFile } from "../utils/image";
 
 const CALL_EVENT_POLL_INTERVAL_MS = 900;
 
@@ -51,7 +54,7 @@ function getCallIceServers() {
 }
 
 export default function HomePage() {
-  const { user, logout, setupEncryptionPassphrase } = useAuth();
+  const { user, setUser, logout, setupEncryptionPassphrase } = useAuth();
   const {
     users,
     loadUsers,
@@ -87,6 +90,9 @@ export default function HomePage() {
   const [activeDesktopTab, setActiveDesktopTab] = useState("chats");
   const [mobileActiveTab, setMobileActiveTab] = useState("chats");
   const [mobileCallSearch, setMobileCallSearch] = useState("");
+  const [isMobileProfileOpen, setIsMobileProfileOpen] = useState(false);
+  const [mobileProfileForm, setMobileProfileForm] = useState({ fullName: "", bio: "", profilePic: "", preview: "" });
+  const [isMobileProfileSaving, setIsMobileProfileSaving] = useState(false);
   const [messageSearch, setMessageSearch] = useState("");
   const [activeSearchIndex, setActiveSearchIndex] = useState(0);
   const [searchJumpKey, setSearchJumpKey] = useState(0);
@@ -256,6 +262,15 @@ export default function HomePage() {
     document.documentElement.classList.toggle("dark", theme === "dark");
     localStorage.setItem("chat_theme", theme);
   }, [theme]);
+
+  useEffect(() => {
+    setMobileProfileForm({
+      fullName: user?.fullName || "",
+      bio: user?.bio || "",
+      profilePic: "",
+      preview: user?.profilePic || "",
+    });
+  }, [user?.fullName, user?.bio, user?.profilePic]);
 
   useEffect(() => {
     if (user?.encryptionPassphraseRequired) return;
@@ -509,6 +524,46 @@ export default function HomePage() {
     }
 
     return serverMessage || error?.message || "Failed to send media";
+  }
+
+  async function handleMobileProfileImageChange(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const compressed = await processImageFile(file, {
+        cropSquare: true,
+        maxWidth: 512,
+        maxHeight: 512,
+        quality: 0.75,
+      });
+      setMobileProfileForm((prev) => ({ ...prev, profilePic: compressed, preview: compressed }));
+    } catch {
+      toast.error("Unable to process image");
+    } finally {
+      event.target.value = "";
+    }
+  }
+
+  async function handleMobileProfileSave(event) {
+    event.preventDefault();
+    if (isMobileProfileSaving) return;
+
+    setIsMobileProfileSaving(true);
+    try {
+      const { data } = await api.put("/users/profile", {
+        fullName: mobileProfileForm.fullName,
+        bio: mobileProfileForm.bio,
+        profilePic: mobileProfileForm.profilePic,
+      });
+      setUser(data.data);
+      setIsMobileProfileOpen(false);
+      toast.success("Profile updated");
+    } catch (error) {
+      toast.error(error?.response?.data?.message || "Update failed");
+    } finally {
+      setIsMobileProfileSaving(false);
+    }
   }
 
   function formatCallDuration(startedAt) {
@@ -1908,7 +1963,22 @@ export default function HomePage() {
         ) : (
           <section className={`flex h-full min-h-0 flex-col overflow-hidden ${theme === "dark" ? "bg-[#071014]/88" : "bg-slate-50/95"}`}>
             <div className="shrink-0 px-6 pb-3 pt-[calc(28px+env(safe-area-inset-top))]">
-              <h1 className={`text-4xl font-bold tracking-normal ${theme === "dark" ? "text-white" : "text-slate-950"}`}>QuickChat</h1>
+              <div className="flex items-center justify-between gap-4">
+                <h1 className={`text-4xl font-bold tracking-normal ${theme === "dark" ? "text-white" : "text-slate-950"}`}>QuickChat</h1>
+                <button
+                  type="button"
+                  onClick={logout}
+                  className={`grid h-12 w-12 shrink-0 place-items-center rounded-full border transition ${
+                    theme === "dark"
+                      ? "border-white/10 bg-white/10 text-rose-200 shadow-lg shadow-black/20 hover:bg-white/15"
+                      : "border-slate-200 bg-white text-rose-600 shadow-sm hover:bg-slate-50"
+                  }`}
+                  aria-label="Logout"
+                  title="Logout"
+                >
+                  <FiLogOut className="text-xl" />
+                </button>
+              </div>
               <div className="relative mt-6">
                 <FiSearch className={`pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 text-2xl ${theme === "dark" ? "text-slate-400" : "text-slate-500"}`} />
                 <input
@@ -1932,22 +2002,27 @@ export default function HomePage() {
                 theme === "dark" ? "border-white/5 bg-[#071014]/95 shadow-[0_-18px_35px_rgba(0,0,0,0.32)]" : "border-slate-200 bg-white/95 shadow-[0_-18px_35px_rgba(15,23,42,0.08)]"
               }`}
             >
-              <div className="grid grid-cols-2 gap-5">
+              <div className="grid grid-cols-3 gap-3">
                 {[
                   { id: "chats", label: "Chats", icon: FiMessageCircle },
                   { id: "calls", label: "Calls", icon: FiPhone },
+                  { id: "profile", label: "Profile", icon: FiUser },
                 ].map((tab) => {
                   const Icon = tab.icon;
-                  const active = mobileActiveTab === tab.id;
+                  const active = tab.id === "profile" ? isMobileProfileOpen : mobileActiveTab === tab.id;
                   return (
                     <button
                       key={tab.id}
                       type="button"
                       onClick={() => {
+                        if (tab.id === "profile") {
+                          setIsMobileProfileOpen(true);
+                          return;
+                        }
                         setMobileActiveTab(tab.id);
                         if (tab.id === "calls") setSelectedUser(null);
                       }}
-                      className={`flex flex-col items-center gap-1 rounded-2xl px-4 py-2 text-sm font-semibold transition ${
+                      className={`flex flex-col items-center gap-1 rounded-2xl px-2 py-2 text-sm font-semibold transition ${
                         active
                           ? theme === "dark"
                             ? "text-white"
@@ -1957,7 +2032,7 @@ export default function HomePage() {
                             : "text-slate-500"
                       }`}
                     >
-                      <span className={`grid h-10 w-16 place-items-center rounded-full ${active ? "bg-violet-500/25" : "bg-transparent"}`}>
+                      <span className={`grid h-10 w-14 place-items-center rounded-full ${active ? "bg-violet-500/25" : "bg-transparent"}`}>
                         <Icon className="text-2xl" />
                       </span>
                       {tab.label}
@@ -2388,6 +2463,118 @@ export default function HomePage() {
             )}
           </div>
         </aside>
+      ) : null}
+
+      {isMobileProfileOpen ? (
+        <div
+          className={`fixed inset-0 z-50 flex min-h-[100dvh] items-center justify-center overflow-hidden px-4 py-6 md:hidden ${
+            theme === "dark" ? "bg-black/95 text-slate-100" : "bg-slate-100/95 text-slate-900"
+          }`}
+        >
+          <form
+            onSubmit={handleMobileProfileSave}
+            className={`relative flex max-h-[calc(100dvh-48px)] w-full max-w-sm flex-col overflow-hidden rounded-2xl p-4 shadow-2xl ${
+              theme === "dark" ? "border border-white/15 bg-black/65" : "border border-slate-300 bg-white"
+            }`}
+            style={{
+              backgroundImage:
+                theme === "dark"
+                  ? `linear-gradient(rgba(6,8,14,0.88), rgba(6,8,14,0.92)), url(${bgImage})`
+                  : `linear-gradient(rgba(255,255,255,0.88), rgba(255,255,255,0.92)), url(${bgImage})`,
+              backgroundSize: "contain",
+              backgroundRepeat: "no-repeat",
+              backgroundPosition: "center",
+            }}
+          >
+            <div className="mb-4 flex shrink-0 items-center justify-between gap-3">
+              <h2 className="text-sm font-semibold">Profile details</h2>
+              <button
+                type="button"
+                onClick={() => setIsMobileProfileOpen(false)}
+                className={`grid h-9 w-9 place-items-center rounded-full ${theme === "dark" ? "hover:bg-white/10" : "hover:bg-slate-100"}`}
+                aria-label="Close profile"
+              >
+                <FiX />
+              </button>
+            </div>
+
+            <div className="chat-scroll min-h-0 flex-1 overflow-y-auto pr-1">
+              <label className={`mb-3 flex cursor-pointer items-center gap-2 text-xs font-semibold ${theme === "dark" ? "text-slate-200" : "text-slate-700"}`}>
+                <ProfileAvatar
+                  src={mobileProfileForm.preview}
+                  name={mobileProfileForm.fullName || user?.fullName}
+                  className={`h-8 w-8 rounded-full object-cover ${theme === "dark" ? "border border-white/20" : "border border-slate-300"}`}
+                />
+                <span>Upload profile image</span>
+                <input
+                  className="hidden"
+                  type="file"
+                  accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
+                  onChange={handleMobileProfileImageChange}
+                />
+              </label>
+
+              <input
+                className={`mb-2 h-11 w-full rounded-md px-3 text-sm outline-none placeholder:text-slate-400 focus:border-violet-400 ${
+                  theme === "dark"
+                    ? "border border-white/20 bg-black/35 text-slate-100"
+                    : "border border-slate-300 bg-white text-slate-900 placeholder:text-slate-500"
+                }`}
+                value={mobileProfileForm.fullName}
+                placeholder="Your name"
+                onChange={(event) => setMobileProfileForm((prev) => ({ ...prev, fullName: event.target.value }))}
+              />
+
+              <textarea
+                className={`mb-3 h-24 w-full resize-none rounded-md px-3 py-2 text-sm outline-none focus:border-violet-400 ${
+                  theme === "dark"
+                    ? "border border-white/20 bg-black/35 text-slate-100 placeholder:text-slate-400"
+                    : "border border-slate-300 bg-white text-slate-900 placeholder:text-slate-500"
+                }`}
+                value={mobileProfileForm.bio}
+                placeholder="Write profile bio"
+                onChange={(event) => setMobileProfileForm((prev) => ({ ...prev, bio: event.target.value }))}
+              />
+
+              <button
+                type="submit"
+                disabled={isMobileProfileSaving}
+                className="mb-5 w-full rounded-full bg-gradient-to-r from-violet-400 to-fuchsia-500 px-3 py-2 text-sm font-semibold text-white transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isMobileProfileSaving ? "Saving..." : "Save"}
+              </button>
+
+              <div className="grid place-items-center pb-4">
+                <ProfileAvatar
+                  src={mobileProfileForm.preview}
+                  name={mobileProfileForm.fullName || user?.fullName}
+                  className={`h-36 w-36 rounded-full border-4 object-cover shadow-lg shadow-violet-500/20 ${
+                    theme === "dark" ? "border-white/20" : "border-violet-200"
+                  }`}
+                />
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={async () => {
+                const confirmed = window.confirm("Are you sure? This will permanently delete your account and chats.");
+                if (!confirmed) return;
+                try {
+                  await api.delete("/users/profile");
+                  await logout();
+                  setIsMobileProfileOpen(false);
+                  toast.success("Account deleted");
+                } catch (error) {
+                  toast.error(error?.response?.data?.message || "Failed to delete account");
+                }
+              }}
+              className="mt-4 shrink-0 rounded-full bg-gradient-to-r from-rose-500 to-red-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-95"
+            >
+              Delete Account
+            </button>
+          </form>
+        </div>
       ) : null}
 
       {previewMedia ? (
