@@ -128,9 +128,9 @@ export default function ChatContainer({
     () => selectedForwardUserIds.map((userId) => (forwardUsers || []).find((item) => item._id === userId)).filter(Boolean),
     [forwardUsers, selectedForwardUserIds]
   );
-  const selectedForwardOwnMessages = useMemo(
-    () => selectedForwardMessages.filter((message) => message.senderId === user?._id && !message.pending),
-    [selectedForwardMessages, user?._id]
+  const selectedDeletableMessages = useMemo(
+    () => selectedForwardMessages.filter((message) => !message.pending),
+    [selectedForwardMessages]
   );
   const activeMenuMessage = useMemo(
     () => messages.find((message) => message._id === openMenuId) || null,
@@ -553,22 +553,22 @@ export default function ChatContainer({
       return;
     }
 
-    if (selectedForwardOwnMessages.length === 0) {
-      toast.error("Sirf apne sent messages delete ho sakte hain.");
+    if (selectedDeletableMessages.length === 0) {
+      toast.error("Pending messages delete nahi ho sakte.");
       return;
     }
 
     try {
       if (onDeleteMessages) {
-        await onDeleteMessages(selectedForwardOwnMessages.map((message) => message._id));
+        await onDeleteMessages(selectedDeletableMessages.map((message) => message._id));
       } else {
-        for (const message of selectedForwardOwnMessages) {
+        for (const message of selectedDeletableMessages) {
           await onDeleteMessage?.(message._id);
         }
       }
-      const deletedIds = new Set(selectedForwardOwnMessages.map((message) => message._id));
+      const deletedIds = new Set(selectedDeletableMessages.map((message) => message._id));
       setSelectedForwardMessageIds((prev) => prev.filter((id) => !deletedIds.has(id)));
-      if (selectedForwardOwnMessages.length === selectedForwardMessages.length) closeForwardMode();
+      if (selectedDeletableMessages.length === selectedForwardMessages.length) closeForwardMode();
     } catch (error) {
       toast.error(error?.response?.data?.message || error?.message || "Selected messages delete nahi ho paaye.");
     }
@@ -619,7 +619,7 @@ export default function ChatContainer({
         getSmartMenuPosition({
           point: { x: touch.clientX, y: touch.clientY },
           isMine: message.senderId === user?._id,
-          hasDelete: message.senderId === user?._id && !message.pending,
+          hasDelete: !message.pending,
         })
       );
       navigator.vibrate?.(20);
@@ -708,7 +708,7 @@ export default function ChatContainer({
 
     const anchor = event.currentTarget.closest("[data-message-bubble='true']") || event.currentTarget;
     const rect = anchor.getBoundingClientRect();
-    setMenuPosition(getSmartMenuPosition({ rect, isMine, hasDelete: isMine && !message.pending }));
+    setMenuPosition(getSmartMenuPosition({ rect, isMine, hasDelete: !message.pending }));
     setOpenMenuId(message._id);
   }
 
@@ -1151,7 +1151,7 @@ export default function ChatContainer({
             <FiCheckSquare className="h-4 w-4 shrink-0" />
             Select
           </button>
-          {activeMenuMessage.senderId === user?._id && !activeMenuMessage.pending && (
+          {!activeMenuMessage.pending && (
             <button
               type="button"
               onClick={() => {
@@ -1219,12 +1219,12 @@ export default function ChatContainer({
             <button
               type="button"
               onClick={deleteSelectedMessages}
-              disabled={selectedForwardOwnMessages.length === 0}
+              disabled={selectedDeletableMessages.length === 0}
               className={`grid h-10 w-10 place-items-center rounded-full text-xl transition hover:scale-105 disabled:cursor-not-allowed disabled:opacity-45 ${
                 isDark ? "text-slate-100 hover:bg-white/10" : "text-slate-700 hover:bg-slate-100"
               }`}
               aria-label="Delete selected messages"
-              title={selectedForwardOwnMessages.length === 0 ? "Only your sent messages can be deleted" : "Delete"}
+              title={selectedDeletableMessages.length === 0 ? "Pending messages can't be deleted" : "Delete"}
             >
               <FiTrash2 />
             </button>
