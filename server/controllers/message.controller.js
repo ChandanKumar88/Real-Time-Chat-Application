@@ -216,16 +216,17 @@ async function deleteMessage(req, res) {
     return res.status(404).json({ success: false, message: "Message not found" });
   }
 
-  if (message.senderId.toString() !== req.user.id) {
-    return res.status(403).json({ success: false, message: "You can only delete your own messages" });
+  const isParticipant = [message.senderId.toString(), message.receiverId.toString()].includes(req.user.id);
+  if (!isParticipant) {
+    return res.status(403).json({ success: false, message: "Not allowed" });
   }
 
-  await Message.findByIdAndDelete(messageId);
+  await Message.findByIdAndUpdate(messageId, { $addToSet: { hiddenFor: req.user.id } });
 
   const io = req.app.get("io");
-  const receiverSocketIds = getSocketIdsByUserId(message.receiverId.toString());
-  if (receiverSocketIds.length > 0) {
-    io.to(receiverSocketIds).emit("message:deleted", { messageId });
+  const mySocketIds = getSocketIdsByUserId(req.user.id);
+  if (mySocketIds.length > 0) {
+    mySocketIds.forEach((socketId) => io.to(socketId).emit("message:deleted", { messageId }));
   }
 
   res.json({ success: true, message: "Message deleted", data: { messageId } });

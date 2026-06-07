@@ -18,6 +18,7 @@ import {
   FiRotateCcw,
   FiSearch,
   FiShare2,
+  FiTrash2,
   FiUser,
   FiVideo,
   FiVideoOff,
@@ -102,6 +103,7 @@ export default function HomePage() {
   const [previewMedia, setPreviewMedia] = useState(null);
   const [previewZoom, setPreviewZoom] = useState(1);
   const [previewVideoRatio, setPreviewVideoRatio] = useState(null);
+  const [isPreviewDeleting, setIsPreviewDeleting] = useState(false);
   const [recoveryPassphrase, setRecoveryPassphrase] = useState("");
   const [recoveryBusy, setRecoveryBusy] = useState(false);
   const [callState, setCallState] = useState({
@@ -502,6 +504,33 @@ export default function HomePage() {
     }
 
     window.open(previewMedia.src, "_blank", "noopener,noreferrer");
+  }
+
+  async function handleDeletePreview() {
+    if (!previewMedia?.id || isPreviewDeleting) return;
+
+    const mediaLabel = previewMedia.type === "video" ? "video" : "image";
+    const confirmed = window.confirm(`Delete this ${mediaLabel}?`);
+    if (!confirmed) return;
+
+    const currentId = previewMedia.id;
+    const currentIndex = previewableMedia.findIndex((item) => item.id === currentId);
+    const nextMedia =
+      currentIndex === -1
+        ? null
+        : previewableMedia[currentIndex + 1] || previewableMedia[currentIndex - 1] || null;
+
+    try {
+      setIsPreviewDeleting(true);
+      await deleteMessage(currentId);
+      setPreviewMedia(nextMedia);
+      setPreviewZoom(1);
+      toast.success(`${mediaLabel === "video" ? "Video" : "Image"} deleted`);
+    } catch (error) {
+      toast.error(error?.response?.data?.message || `Failed to delete ${mediaLabel}`);
+    } finally {
+      setIsPreviewDeleting(false);
+    }
   }
 
   function openPreview(media) {
@@ -2711,6 +2740,16 @@ export default function HomePage() {
             </div>
 
             <div className="flex shrink-0 items-center gap-2 text-white/90 sm:gap-4">
+              <button
+                type="button"
+                onClick={handleDeletePreview}
+                disabled={isPreviewDeleting}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full text-rose-300 transition hover:bg-rose-500/15 hover:text-rose-100 disabled:cursor-not-allowed disabled:opacity-45"
+                aria-label="Delete media"
+                title="Delete"
+              >
+                <FiTrash2 className="text-xl" />
+              </button>
               <button
                 type="button"
                 onClick={handleSharePreview}
