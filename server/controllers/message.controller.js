@@ -237,17 +237,20 @@ async function clearConversation(req, res) {
     return res.status(400).json({ success: false, message: "Invalid conversation user" });
   }
 
-  await Message.deleteMany({
+  await Message.updateMany({
     $or: [
       { senderId: req.user.id, receiverId: userId },
       { senderId: userId, receiverId: req.user.id },
     ],
+    hiddenFor: { $ne: req.user.id },
+  }, {
+    $addToSet: { hiddenFor: req.user.id },
   });
 
   const io = req.app.get("io");
-  const receiverSocketIds = getSocketIdsByUserId(userId);
-  if (receiverSocketIds.length > 0) {
-    io.to(receiverSocketIds).emit("message:conversationDeleted", { userId: req.user.id });
+  const mySocketIds = getSocketIdsByUserId(req.user.id);
+  if (mySocketIds.length > 0) {
+    mySocketIds.forEach((socketId) => io.to(socketId).emit("message:conversationDeleted", { userId }));
   }
 
   res.json({ success: true, message: "Chat cleared", data: { userId } });
@@ -259,17 +262,20 @@ async function deleteConversation(req, res) {
     return res.status(400).json({ success: false, message: "Invalid conversation user" });
   }
 
-  await Message.deleteMany({
+  await Message.updateMany({
     $or: [
       { senderId: req.user.id, receiverId: userId },
       { senderId: userId, receiverId: req.user.id },
     ],
+    hiddenFor: { $ne: req.user.id },
+  }, {
+    $addToSet: { hiddenFor: req.user.id },
   });
 
   const io = req.app.get("io");
-  const receiverSocketIds = getSocketIdsByUserId(userId);
-  if (receiverSocketIds.length > 0) {
-    io.to(receiverSocketIds).emit("message:conversationDeleted", { userId: req.user.id });
+  const mySocketIds = getSocketIdsByUserId(req.user.id);
+  if (mySocketIds.length > 0) {
+    mySocketIds.forEach((socketId) => io.to(socketId).emit("message:conversationDeleted", { userId }));
   }
 
   res.json({ success: true, message: "Chat deleted", data: { userId } });
