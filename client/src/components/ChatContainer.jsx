@@ -773,7 +773,7 @@ export default function ChatContainer({
           <div className="min-w-0">
             <p className={`truncate text-sm font-semibold lg:text-lg ${isDark ? "text-slate-100" : "text-slate-900"}`}>{selectedUser.fullName}</p>
             <p
-              className={`inline-flex items-center gap-1.5 text-xs lg:hidden ${
+              className={`inline-flex items-center gap-1.5 text-xs  ${
                 isTyping ? "text-violet-300" : selectedUser.isOnline ? "text-emerald-500" : isDark ? "text-slate-400" : "text-slate-500"
               }`}
             >
