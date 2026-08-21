@@ -55,6 +55,61 @@ function getCallIceServers() {
   return iceServers;
 }
 
+function formatCallDateTime(value, fallback = "") {
+  if (!value && !fallback) return "";
+  let date = null;
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    date = value;
+  } else if (typeof value === "number" && !Number.isNaN(value)) {
+    date = new Date(value);
+  } else if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    if (!Number.isNaN(parsed)) {
+      date = new Date(parsed);
+    } else if (/^\d+$/.test(value.trim())) {
+      date = new Date(Number(value.trim()));
+    }
+  }
+
+  if (!date || Number.isNaN(date.getTime())) {
+    return fallback || String(value || "");
+  }
+
+  const now = new Date();
+  const timeStr = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+  const isToday =
+    date.getDate() === now.getDate() &&
+    date.getMonth() === now.getMonth() &&
+    date.getFullYear() === now.getFullYear();
+
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const isYesterday =
+    date.getDate() === yesterday.getDate() &&
+    date.getMonth() === yesterday.getMonth() &&
+    date.getFullYear() === yesterday.getFullYear();
+
+  const isSameYear = date.getFullYear() === now.getFullYear();
+
+  if (isToday) {
+    return `Today, ${timeStr}`;
+  }
+  if (isYesterday) {
+    return `Yesterday, ${timeStr}`;
+  }
+
+  const day = date.getDate();
+  const month = date.toLocaleString("en-US", { month: "short" });
+
+  if (isSameYear) {
+    return `${day} ${month}, ${timeStr}`;
+  }
+
+  return `${day} ${month} ${date.getFullYear()}, ${timeStr}`;
+}
+
 export default function HomePage() {
   const { user, setUser, logout, setupEncryptionPassphrase } = useAuth();
   const {
@@ -253,7 +308,22 @@ export default function HomePage() {
     setIsCallHistoryLoaded(false);
     try {
       const savedHistory = localStorage.getItem(`quickchat_call_history_${user._id}`);
-      setCallHistory(savedHistory ? JSON.parse(savedHistory) : []);
+      const rawHistory = savedHistory ? JSON.parse(savedHistory) : [];
+      const normalizedHistory = rawHistory.map((item) => {
+        let createdAt = item.createdAt;
+        if (!createdAt && item.id) {
+          const timestampPrefix = Number.parseInt(String(item.id).split("-")[0], 10);
+          if (timestampPrefix && !Number.isNaN(timestampPrefix) && timestampPrefix > 1600000000000) {
+            createdAt = timestampPrefix;
+          }
+        }
+        return {
+          ...item,
+          createdAt: createdAt || null,
+          time: formatCallDateTime(createdAt, item.time),
+        };
+      });
+      setCallHistory(normalizedHistory);
     } catch {
       setCallHistory([]);
     } finally {
@@ -341,11 +411,12 @@ export default function HomePage() {
   const mobileFilteredCalls = useMemo(() => {
     const keyword = mobileCallSearch.trim().toLowerCase();
     if (!keyword) return callHistory;
-    return callHistory.filter((call) =>
-      [call.name, call.statusLabel, call.status, call.type, call.time]
+    return callHistory.filter((call) => {
+      const formattedTime = formatCallDateTime(call.createdAt, call.time);
+      return [call.name, call.statusLabel, call.status, call.type, call.time, formattedTime]
         .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(keyword))
-    );
+        .some((value) => String(value).toLowerCase().includes(keyword));
+    });
   }, [callHistory, mobileCallSearch]);
   const isSelectedUserTyping = Boolean(selectedUser && typingUsers[selectedUser._id]);
 
@@ -650,7 +721,8 @@ export default function HomePage() {
       received: "Received",
       outgoing: "Outgoing",
     };
-    const historyId = callIdRef.current || `${Date.now()}-${peer._id}-${status}`;
+    const now = Date.now();
+    const historyId = callIdRef.current || `${now}-${peer._id}-${status}`;
     const entry = {
       id: historyId,
       userId: peer._id,
@@ -659,7 +731,8 @@ export default function HomePage() {
       type,
       status,
       statusLabel: labels[status] || "Call",
-      time: formatPanelTime(Date.now()),
+      createdAt: now,
+      time: formatCallDateTime(now),
     };
     activeCallHistoryIdRef.current = historyId;
     setCallHistory((prev) => [entry, ...prev.filter((item) => item.id !== historyId)].slice(0, 30));
@@ -674,12 +747,14 @@ export default function HomePage() {
       return;
     }
 
+    const now = Date.now();
     setCallHistory((prev) =>
       prev.map((item) =>
         item.id === activeCallHistoryIdRef.current
           ? {
               ...item,
-              time: item.time || formatPanelTime(Date.now()),
+              createdAt: item.createdAt || now,
+              time: formatCallDateTime(item.createdAt || now, item.time),
             }
           : item
       )
@@ -817,21 +892,28 @@ export default function HomePage() {
     return (
       <div className="chat-scroll min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-5 pb-[calc(96px+env(safe-area-inset-bottom))]">
         {mobileFilteredCalls.length ? (
-          mobileFilteredCalls.map((call) => (
-            <div key={call.id} className="flex items-center gap-4 rounded-2xl px-1 py-3">
-              <ProfileAvatar src={call.profilePic} name={call.name} className="h-14 w-14 rounded-full object-cover" />
-              <div className="min-w-0 flex-1 border-b border-white/5 pb-3">
-                <div className="flex min-w-0 items-center justify-between gap-3">
-                  <p className={`truncate text-base font-semibold ${theme === "dark" ? "text-slate-100" : "text-slate-900"}`}>{call.name}</p>
-                  {call.time && <span className={`shrink-0 text-xs ${theme === "dark" ? "text-slate-500" : "text-slate-400"}`}>{call.time}</span>}
+          mobileFilteredCalls.map((call) => {
+            const formattedTime = formatCallDateTime(call.createdAt, call.time);
+            return (
+              <div key={call.id} className="flex items-center gap-4 rounded-2xl px-1 py-3">
+                <ProfileAvatar src={call.profilePic} name={call.name} className="h-14 w-14 rounded-full object-cover" />
+                <div className="min-w-0 flex-1 border-b border-white/5 pb-3">
+                  <div className="flex min-w-0 items-center justify-between gap-3">
+                    <p className={`truncate text-base font-semibold ${theme === "dark" ? "text-slate-100" : "text-slate-900"}`}>{call.name}</p>
+                    {formattedTime && (
+                      <span className={`shrink-0 text-xs ${theme === "dark" ? "text-slate-500" : "text-slate-400"}`}>
+                        {formattedTime}
+                      </span>
+                    )}
+                  </div>
+                  <p className={`mt-1 flex items-center gap-1.5 truncate text-sm ${getMobileCallStatusClass(call.status)}`}>
+                    {call.type === "video" ? <FiVideo /> : <FiPhone />}
+                    {call.statusLabel || "Call"} {call.type === "video" ? "video call" : "voice call"}
+                  </p>
                 </div>
-                <p className={`mt-1 flex items-center gap-1.5 truncate text-sm ${getMobileCallStatusClass(call.status)}`}>
-                  {call.type === "video" ? <FiVideo /> : <FiPhone />}
-                  {call.statusLabel || "Call"} {call.type === "video" ? "video call" : "voice call"}
-                </p>
               </div>
-            </div>
-          ))
+            );
+          })
         ) : (
           <div className={`mt-8 rounded-2xl px-4 py-8 text-center text-sm ${theme === "dark" ? "bg-white/5 text-slate-400" : "bg-slate-100 text-slate-500"}`}>
             {mobileCallSearch.trim() ? "No matching calls found." : "No call history yet."}

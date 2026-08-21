@@ -1007,7 +1007,7 @@ export default function ChatContainer({
                               : "bg-slate-200 text-slate-700"
                         }`}
                       >
-                        <FiPhone className="h-5 w-5" />
+                        {m.callType === "video" ? <FiVideo className="h-5 w-5" /> : <FiPhone className="h-5 w-5" />}
                       </span>
                       <span className="min-w-0">
                         <span className="block truncate text-base font-semibold">{m.callType === "video" ? "Video call" : "Voice call"}</span>

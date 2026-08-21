@@ -4,6 +4,61 @@ import { FiEdit2, FiLogOut, FiMessageCircle, FiMoon, FiMoreVertical, FiPhone, Fi
 import logoIcon from "../assets/logo_icon.svg";
 import ProfileAvatar from "./ProfileAvatar";
 
+function formatCallDateTime(value, fallback = "") {
+  if (!value && !fallback) return "";
+  let date = null;
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    date = value;
+  } else if (typeof value === "number" && !Number.isNaN(value)) {
+    date = new Date(value);
+  } else if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    if (!Number.isNaN(parsed)) {
+      date = new Date(parsed);
+    } else if (/^\d+$/.test(value.trim())) {
+      date = new Date(Number(value.trim()));
+    }
+  }
+
+  if (!date || Number.isNaN(date.getTime())) {
+    return fallback || String(value || "");
+  }
+
+  const now = new Date();
+  const timeStr = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+  const isToday =
+    date.getDate() === now.getDate() &&
+    date.getMonth() === now.getMonth() &&
+    date.getFullYear() === now.getFullYear();
+
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const isYesterday =
+    date.getDate() === yesterday.getDate() &&
+    date.getMonth() === yesterday.getMonth() &&
+    date.getFullYear() === yesterday.getFullYear();
+
+  const isSameYear = date.getFullYear() === now.getFullYear();
+
+  if (isToday) {
+    return `Today, ${timeStr}`;
+  }
+  if (isYesterday) {
+    return `Yesterday, ${timeStr}`;
+  }
+
+  const day = date.getDate();
+  const month = date.toLocaleString("en-US", { month: "short" });
+
+  if (isSameYear) {
+    return `${day} ${month}, ${timeStr}`;
+  }
+
+  return `${day} ${month} ${date.getFullYear()}, ${timeStr}`;
+}
+
 export default function Sidebar({
   users,
   search,
@@ -49,8 +104,9 @@ export default function Sidebar({
   const filteredCalls = callHistory.filter((call) => {
     const q = callSearch.trim().toLowerCase();
     if (!q) return true;
+    const formattedTime = formatCallDateTime(call.createdAt, call.time);
 
-    return [call.name, call.statusLabel, call.status, call.type, call.time]
+    return [call.name, call.statusLabel, call.status, call.type, call.time, formattedTime]
       .filter(Boolean)
       .some((value) => String(value).toLowerCase().includes(q));
   });
@@ -247,6 +303,7 @@ export default function Sidebar({
                     : isDark
                       ? "text-sky-300"
                       : "text-sky-600";
+              const formattedTime = formatCallDateTime(call.createdAt, call.time);
               return (
                 <div
                   key={call.id}
@@ -260,7 +317,7 @@ export default function Sidebar({
                       <p className={`truncate text-sm font-semibold ${isDark ? "text-slate-100" : "text-slate-900"}`}>{call.name}</p>
                       <p className={`flex items-center gap-1 truncate text-[11px] ${statusClass}`}>
                         {call.type === "video" ? <FiVideo /> : <FiPhone />}
-                        {call.statusLabel} - {call.time}
+                        {call.statusLabel} - {formattedTime}
                       </p>
                     </div>
                   </div>
