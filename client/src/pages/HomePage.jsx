@@ -1230,24 +1230,30 @@ export default function HomePage() {
 
   function markCallAsVideo() {
     setCallHasVideo(true);
-    if (callStateRef.current.type !== "video") {
-      setCallState((prev) => ({ ...prev, type: "video" }));
-    }
+    setCallState((prev) => ({
+      ...prev,
+      type: "video",
+      speakerOn: true,
+    }));
   }
 
   function attachRemoteMediaStream(remoteStream) {
     if (!remoteStream || !remoteAudioRef.current) return;
 
     remoteStreamRef.current = remoteStream;
-    if (remoteStream.getVideoTracks().length > 0) {
+    const hasVideoTracks = remoteStream.getVideoTracks().length > 0;
+    if (hasVideoTracks) {
       markCallAsVideo();
     }
+    const isVideo = callStateRef.current.type === "video" || hasVideoTracks;
+    const isSpeakerOn = isVideo || callStateRef.current.speakerOn;
+
     remoteAudioRef.current.autoplay = true;
     remoteAudioRef.current.playsInline = true;
     remoteAudioRef.current.srcObject = remoteStream;
     remoteAudioRef.current.muted = false;
-    remoteAudioRef.current.volume = callStateRef.current.speakerOn ? 1 : 0.75;
-    if (callStateRef.current.speakerOn) {
+    remoteAudioRef.current.volume = isSpeakerOn ? 1 : 0.75;
+    if (isSpeakerOn) {
       applySpeakerOutput(true).catch(() => null);
     }
     remoteAudioRef.current.play().catch(() => null);
@@ -1532,7 +1538,7 @@ export default function HomePage() {
         direction: "outgoing",
         peer: selectedUser,
         muted: false,
-        speakerOn: false,
+        speakerOn: callType === "video",
         cameraOff: false,
         type: callType,
         startedAt: null,
@@ -1627,7 +1633,7 @@ export default function HomePage() {
   }
 
   async function toggleCallSpeaker() {
-    if (!["connecting", "active"].includes(callStateRef.current.status)) {
+    if (!["calling", "connecting", "active"].includes(callStateRef.current.status)) {
       toast.error("Speaker call connect hone ke baad use karo.");
       return;
     }
@@ -1659,20 +1665,21 @@ export default function HomePage() {
         return;
       }
 
+      const isIncomingVideo = payload.callType === "video" || payload.type === "video" || payload.isVideoCall === true;
       callPeerIdRef.current = from;
       callIdRef.current = event.callId;
       pendingOfferRef.current = payload.offer;
       queuedIceCandidatesRef.current = [];
       setIsCallMinimized(false);
-      setCallHasVideo(payload.callType === "video" || payload.type === "video" || payload.isVideoCall === true);
+      setCallHasVideo(isIncomingVideo);
       setCallState({
         status: "ringing",
         direction: "incoming",
         peer: getCallPeer(from, payload.caller),
         muted: false,
-        speakerOn: false,
+        speakerOn: isIncomingVideo,
         cameraOff: false,
-        type: payload.callType === "video" || payload.type === "video" || payload.isVideoCall === true ? "video" : "audio",
+        type: isIncomingVideo ? "video" : "audio",
         startedAt: null,
       });
       return;
@@ -2033,7 +2040,7 @@ export default function HomePage() {
                   <button
                     type="button"
                     onClick={toggleCallSpeaker}
-                    disabled={!["connecting", "active"].includes(callState.status)}
+                    disabled={!["calling", "connecting", "active"].includes(callState.status)}
                     className="flex flex-col items-center gap-2 text-[11px] font-medium text-white/70 disabled:cursor-not-allowed disabled:opacity-45"
                   >
                     <span
