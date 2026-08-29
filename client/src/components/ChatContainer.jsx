@@ -24,27 +24,6 @@ import { api } from "../services/api";
 
 const MAX_VIDEO_SIZE_MB = 50;
 
-async function uploadVideoToCloudinary(file) {
-  const { data } = await api.get("/messages/upload/signature");
-  const uploadConfig = data.data;
-  const formData = new FormData();
-  formData.append("file", file);
-  formData.append("api_key", uploadConfig.apiKey);
-  formData.append("timestamp", uploadConfig.timestamp);
-  formData.append("signature", uploadConfig.signature);
-  formData.append("folder", uploadConfig.folder);
-
-  const response = await fetch(`https://api.cloudinary.com/v1_1/${uploadConfig.cloudName}/video/upload`, {
-    method: "POST",
-    body: formData,
-  });
-  const result = await response.json();
-  if (!response.ok || !result.secure_url) {
-    throw new Error(result.error?.message || "Video upload failed");
-  }
-  return result.secure_url;
-}
-
 export default function ChatContainer({
   user,
   selectedUser,
@@ -1058,9 +1037,15 @@ export default function ChatContainer({
                           openMessageMenu(m, e, isMine);
                         }
                       }}
-                      className="mt-2 block max-w-full cursor-pointer"
+                      className="relative mt-2 block max-w-full cursor-pointer"
                     >
-                      <img src={m.image} className="block max-h-56 w-full max-w-[min(58vw,240px)] rounded-xl object-cover sm:max-h-64 sm:max-w-full" />
+                      <img src={m.image} alt="Shared image" className="block max-h-56 w-full max-w-[min(58vw,240px)] rounded-xl object-cover sm:max-h-64 sm:max-w-full" />
+                      {m.isMediaE2ee && (
+                        <span className="absolute bottom-1.5 right-1.5 flex items-center gap-1 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-emerald-300 backdrop-blur-sm" title="End-to-end encrypted media">
+                          <FiLock size={10} />
+                          <span>E2EE</span>
+                        </span>
+                      )}
                     </div>
                   )}
                   {!!m.video && (
@@ -1089,11 +1074,17 @@ export default function ChatContainer({
                           openMessageMenu(m, e, isMine);
                         }
                       }}
-                      className="mt-2 block max-w-full cursor-pointer"
+                      className="relative mt-2 block max-w-full cursor-pointer"
                     >
                       <video className="block max-h-56 w-full max-w-[min(58vw,240px)] rounded-xl object-cover sm:max-h-64 sm:max-w-full" muted playsInline>
                         <source src={m.video} />
                       </video>
+                      {m.isMediaE2ee && (
+                        <span className="absolute bottom-1.5 right-1.5 flex items-center gap-1 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-emerald-300 backdrop-blur-sm" title="End-to-end encrypted media">
+                          <FiLock size={10} />
+                          <span>E2EE</span>
+                        </span>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1483,11 +1474,9 @@ export default function ChatContainer({
                   }
 
                   setImage("");
-                  setVideo("");
-                  setIsVideoUploading(true);
-                  const videoUrl = await uploadVideoToCloudinary(file);
+                  const previewUrl = URL.createObjectURL(file);
+                  setVideo(previewUrl);
                   setMediaError("");
-                  setVideo(videoUrl);
                   toast.success("Video attached");
                   return;
                 }
@@ -1501,7 +1490,7 @@ export default function ChatContainer({
                 setImage(compressedImage);
                 setVideo("");
               } catch (error) {
-                const message = error?.response?.data?.message || error?.message || "Media upload failed";
+                const message = error?.response?.data?.message || error?.message || "Media attachment failed";
                 setMediaError(message);
                 toast.error(message);
               } finally {

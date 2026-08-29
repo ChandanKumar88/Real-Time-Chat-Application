@@ -427,16 +427,15 @@ export default function HomePage() {
       for (const message of orderedMessages) {
         const payload = {
           text: message.decryptionFailed ? "" : message.text || "",
-          image: message.image || "",
-          video: message.video || "",
-          imageUrl: message.image || "",
-          videoUrl: message.video || "",
+          forwardMedia: message.rawMediaInfo || null,
+          image: message.rawMediaInfo ? "" : (message.image || ""),
+          video: message.rawMediaInfo ? "" : (message.video || ""),
           isForwarded: true,
           forwardedFrom: message.senderId,
           originalMessageId: message._id,
         };
 
-        if (!payload.text && !payload.image && !payload.video && !payload.imageUrl && !payload.videoUrl) continue;
+        if (!payload.text && !payload.image && !payload.video && !payload.forwardMedia) continue;
         await sendMessage(targetUser._id, payload);
       }
 

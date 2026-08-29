@@ -2,7 +2,82 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { io } from "socket.io-client";
 import { api } from "../services/api";
 import { useAuth } from "./AuthContext";
-import { decryptText, encryptText, ensureLocalKeyPair, getLocalKeyPair } from "../utils/e2ee";
+import {
+  decryptText,
+  encryptText,
+  ensureLocalKeyPair,
+  getLocalKeyPair,
+  encryptMediaFile,
+  decryptMediaBuffer,
+  encryptMessagePayload,
+  decryptMessagePayload,
+} from "../utils/e2ee";
+
+const mediaBlobUrlCache = new Map();
+
+export async function uploadEncryptedBlobToCloudinary(blob, fileName = "encrypted.bin") {
+  const { data } = await api.get("/messages/upload/signature");
+  const uploadConfig = data.data;
+  const formData = new FormData();
+  formData.append("file", blob, fileName);
+  formData.append("api_key", uploadConfig.apiKey);
+  formData.append("timestamp", uploadConfig.timestamp);
+  formData.append("signature", uploadConfig.signature);
+  formData.append("folder", uploadConfig.folder);
+
+  const response = await fetch(`https://api.cloudinary.com/v1_1/${uploadConfig.cloudName}/auto/upload`, {
+    method: "POST",
+    body: formData,
+  });
+  const result = await response.json();
+  if (!response.ok || !result.secure_url) {
+    throw new Error(result.error?.message || "Encrypted media upload failed");
+  }
+  return result.secure_url;
+}
+
+export function dataUriToBlob(dataUri) {
+  if (!dataUri || typeof dataUri !== "string") return null;
+  if (!dataUri.startsWith("data:")) return null;
+  try {
+    const [header, base64Data] = dataUri.split(",");
+    const mimeType = header.match(/:(.*?);/)?.[1] || "application/octet-stream";
+    const binaryString = atob(base64Data);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    return new Blob([bytes], { type: mimeType });
+  } catch {
+    return null;
+  }
+}
+
+async function resolveDecryptedMediaUrl(mediaInfo) {
+  if (!mediaInfo || !mediaInfo.url) return "";
+  if (mediaBlobUrlCache.has(mediaInfo.url)) {
+    return mediaBlobUrlCache.get(mediaInfo.url);
+  }
+
+  try {
+    const res = await fetch(mediaInfo.url);
+    if (!res.ok) throw new Error("Media fetch failed");
+    const encryptedBuffer = await res.arrayBuffer();
+    const decryptedBlob = await decryptMediaBuffer({
+      encryptedBuffer,
+      mediaKeyBase64: mediaInfo.key,
+      ivBase64: mediaInfo.iv,
+      mimeType: mediaInfo.mimeType || "application/octet-stream",
+    });
+
+    const blobUrl = URL.createObjectURL(decryptedBlob);
+    mediaBlobUrlCache.set(mediaInfo.url, blobUrl);
+    return blobUrl;
+  } catch (error) {
+    console.error("Failed to decrypt media blob:", error);
+    return "";
+  }
+}
 
 const ChatContext = createContext(null);
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || "http://localhost:5000";
@@ -96,24 +171,55 @@ export function ChatProvider({ children }) {
 
   const decryptMessage = useCallback(
     async (message, peerUser = selectedUserRef.current) => {
-      if (!message?.encryptedPayload || !user?._id) return message;
+      if (!message || !user?._id) return message;
+      if (!message.encryptedPayload) return message;
 
       const senderId = message.senderId?.toString?.() || message.senderId;
       const receiverId = message.receiverId?.toString?.() || message.receiverId;
       const peerId = senderId === user._id ? receiverId : senderId;
       const freshPeer = usersRef.current.find((u) => u._id === peerId);
       const messagePeerPublicKey = senderId === user._id ? message.receiverPublicKey : message.senderPublicKey;
-      const text = await decryptText({
+
+      const payloadResult = await decryptMessagePayload({
         encryptedPayload: message.encryptedPayload,
         myUserId: user._id,
         peerPublicKey: messagePeerPublicKey || freshPeer?.publicKey || peerUser?.publicKey,
       });
 
-      if (text === null) {
-        return { ...message, text: "", decryptionFailed: true };
+      if (payloadResult === null) {
+        return { ...message, text: "", image: "", video: "", decryptionFailed: true };
       }
 
-      return { ...message, text, decryptionFailed: false };
+      if (typeof payloadResult === "object" && payloadResult !== null) {
+        const text = payloadResult.text || "";
+        const mediaInfo = payloadResult.media || null;
+        let image = message.image || "";
+        let video = message.video || "";
+        let isMediaE2ee = false;
+
+        if (mediaInfo && mediaInfo.url && mediaInfo.key && mediaInfo.iv) {
+          isMediaE2ee = true;
+          const decryptedBlobUrl = await resolveDecryptedMediaUrl(mediaInfo);
+          const isVideo = mediaInfo.type === "video" || mediaInfo.mimeType?.startsWith("video/");
+          if (isVideo) {
+            video = decryptedBlobUrl || message.video || "";
+          } else {
+            image = decryptedBlobUrl || message.image || "";
+          }
+        }
+
+        return {
+          ...message,
+          text,
+          image,
+          video,
+          isMediaE2ee,
+          rawMediaInfo: mediaInfo,
+          decryptionFailed: false,
+        };
+      }
+
+      return { ...message, text: payloadResult, decryptionFailed: false };
     },
     [user?._id]
   );
@@ -635,11 +741,67 @@ export function ChatProvider({ children }) {
       throw new Error("You blocked this user. Unblock to send messages.");
     }
     const localKeyPair = getLocalKeyPair(user._id);
-    if (payload.text && user.publicKey && localKeyPair?.publicKey !== user.publicKey) {
+    if ((payload.text || payload.image || payload.video || payload.mediaFile || payload.file) && user.publicKey && localKeyPair?.publicKey !== user.publicKey) {
       throw new Error("Create the encrypted chat key backup from the original browser.");
     }
 
     const tempId = `temp-${Date.now()}`;
+    let rawMediaInput = payload.mediaFile || payload.file || null;
+    let localPreviewUrl = "";
+    let isImage = false;
+    let isVideo = false;
+
+    if (!rawMediaInput) {
+      if (payload.image && typeof payload.image === "string" && payload.image.startsWith("data:")) {
+        rawMediaInput = dataUriToBlob(payload.image);
+        isImage = true;
+      } else if (payload.image && (payload.image instanceof File || payload.image instanceof Blob)) {
+        rawMediaInput = payload.image;
+        isImage = true;
+      } else if (payload.image && typeof payload.image === "string" && payload.image.startsWith("blob:")) {
+        try {
+          const res = await fetch(payload.image);
+          rawMediaInput = await res.blob();
+          isImage = true;
+        } catch {
+          // ignore
+        }
+      } else if (payload.video && (payload.video instanceof File || payload.video instanceof Blob)) {
+        rawMediaInput = payload.video;
+        isVideo = true;
+      } else if (payload.video && typeof payload.video === "string" && payload.video.startsWith("blob:")) {
+        try {
+          const res = await fetch(payload.video);
+          rawMediaInput = await res.blob();
+          isVideo = true;
+        } catch {
+          // ignore
+        }
+      } else if (payload.video && typeof payload.video === "string" && payload.video.startsWith("data:")) {
+        rawMediaInput = dataUriToBlob(payload.video);
+        isVideo = true;
+      }
+    } else {
+      if (rawMediaInput.type?.startsWith("video/")) isVideo = true;
+      else isImage = true;
+    }
+
+    if (rawMediaInput instanceof Blob || rawMediaInput instanceof File) {
+      localPreviewUrl = URL.createObjectURL(rawMediaInput);
+      if (rawMediaInput.type?.startsWith("video/")) {
+        isVideo = true;
+        isImage = false;
+      } else {
+        isImage = true;
+        isVideo = false;
+      }
+    } else if (payload.forwardMedia || payload.rawMediaInfo) {
+      const fwd = payload.forwardMedia || payload.rawMediaInfo;
+      if (fwd.type === "video" || fwd.mimeType?.startsWith("video/")) isVideo = true;
+      else isImage = true;
+      localPreviewUrl = fwd.url ? (mediaBlobUrlCache.get(fwd.url) || fwd.url) : "";
+    }
+
     const optimisticMessage = {
       _id: tempId,
       senderId: user._id,
@@ -647,12 +809,14 @@ export function ChatProvider({ children }) {
       replyTo: payload.replyTo || null,
       text: payload.text || "",
       encryptedPayload: "",
-      encrypted: false,
-      encryptionVersion: 0,
+      encrypted: true,
+      encryptionVersion: 1,
       senderPublicKey: user.publicKey || localKeyPair?.publicKey || "",
       receiverPublicKey: targetUser?.publicKey || "",
-      image: payload.image || payload.imageUrl || "",
-      video: payload.video || payload.videoUrl || "",
+      image: isImage ? (localPreviewUrl || payload.image || payload.imageUrl || "") : "",
+      video: isVideo ? (localPreviewUrl || payload.video || payload.videoUrl || "") : "",
+      isMediaE2ee: Boolean(rawMediaInput || payload.forwardMedia || payload.rawMediaInfo),
+      rawMediaInfo: payload.forwardMedia || payload.rawMediaInfo || null,
       isForwarded: Boolean(payload.isForwarded),
       forwardedFrom: payload.forwardedFrom || (payload.isForwarded ? user._id : null),
       originalMessageId: payload.originalMessageId || null,
@@ -664,15 +828,61 @@ export function ChatProvider({ children }) {
     updateConversationMessages(targetUserId, (prev) => [...prev, optimisticMessage]);
 
     try {
-      const encryptedPayload = payload.text
-        ? await encryptText({ text: payload.text, myUserId: user._id, peerPublicKey: targetUser?.publicKey })
-        : "";
-      const { data } = await api.post(`/messages/${targetUserId}`, { ...payload, text: "", encryptedPayload });
+      let mediaMetadata = null;
+
+      if (rawMediaInput) {
+        const { encryptedBlob, mediaKeyBase64, ivBase64, mimeType, fileName, size } = await encryptMediaFile(rawMediaInput);
+        const cloudUrl = await uploadEncryptedBlobToCloudinary(encryptedBlob, fileName || (isVideo ? "video.enc" : "image.enc"));
+        if (localPreviewUrl) {
+          mediaBlobUrlCache.set(cloudUrl, localPreviewUrl);
+        }
+        mediaMetadata = {
+          url: cloudUrl,
+          key: mediaKeyBase64,
+          iv: ivBase64,
+          type: isVideo ? "video" : "image",
+          mimeType,
+          fileName,
+          size,
+        };
+      } else if (payload.forwardMedia || payload.rawMediaInfo) {
+        mediaMetadata = payload.forwardMedia || payload.rawMediaInfo;
+      }
+
+      const messageEnvelope = {
+        text: payload.text || "",
+      };
+      if (mediaMetadata) {
+        messageEnvelope.media = mediaMetadata;
+      }
+
+      const encryptedPayload = await encryptMessagePayload({
+        payload: messageEnvelope,
+        myUserId: user._id,
+        peerPublicKey: targetUser?.publicKey,
+      });
+
+      const requestBody = {
+        replyTo: payload.replyTo || null,
+        isForwarded: Boolean(payload.isForwarded),
+        originalMessageId: payload.originalMessageId || null,
+        encryptedPayload,
+        text: "",
+        image: "",
+        video: "",
+      };
+
+      const { data } = await api.post(`/messages/${targetUserId}`, requestBody);
       const decryptedMessage = await decryptMessage(data.data, targetUser);
+
       updateConversationMessages(targetUserId, (prev) => {
         const confirmedMessage = {
           ...decryptedMessage,
           text: payload.text || decryptedMessage.text,
+          image: isImage ? (localPreviewUrl || decryptedMessage.image) : decryptedMessage.image,
+          video: isVideo ? (localPreviewUrl || decryptedMessage.video) : decryptedMessage.video,
+          isMediaE2ee: Boolean(mediaMetadata || decryptedMessage.isMediaE2ee),
+          rawMediaInfo: mediaMetadata || decryptedMessage.rawMediaInfo,
           isForwarded: Boolean(payload.isForwarded || decryptedMessage.isForwarded),
           forwardedFrom: payload.forwardedFrom || decryptedMessage.forwardedFrom || (payload.isForwarded ? user._id : null),
           originalMessageId: payload.originalMessageId || decryptedMessage.originalMessageId || null,

@@ -249,3 +249,76 @@ export async function deriveCallMediaKey({ myUserId, peerPublicKey, callId }) {
     additionalData: new TextEncoder().encode(`quickchat-call-media-frame-v1:${callId}`),
   };
 }
+
+export async function encryptMediaBuffer(fileBuffer, mimeType = "application/octet-stream", fileName = "media") {
+  const mediaKey = await crypto.subtle.generateKey(
+    { name: "AES-GCM", length: 256 },
+    true,
+    ["encrypt", "decrypt"]
+  );
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encryptedBuffer = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    mediaKey,
+    fileBuffer
+  );
+
+  const exportedRawKey = await crypto.subtle.exportKey("raw", mediaKey);
+  const encryptedBlob = new Blob([encryptedBuffer], { type: "application/octet-stream" });
+
+  return {
+    encryptedBlob,
+    encryptedBuffer,
+    mediaKeyBase64: arrayBufferToBase64(exportedRawKey),
+    ivBase64: arrayBufferToBase64(iv),
+    mimeType,
+    fileName,
+    size: fileBuffer.byteLength,
+  };
+}
+
+export async function encryptMediaFile(file) {
+  const fileBuffer = await file.arrayBuffer();
+  return encryptMediaBuffer(fileBuffer, file.type || "application/octet-stream", file.name || "media");
+}
+
+export async function decryptMediaBuffer({ encryptedBuffer, mediaKeyBase64, ivBase64, mimeType = "application/octet-stream" }) {
+  const rawKey = base64ToArrayBuffer(mediaKeyBase64);
+  const iv = new Uint8Array(base64ToArrayBuffer(ivBase64));
+  const mediaKey = await crypto.subtle.importKey(
+    "raw",
+    rawKey,
+    "AES-GCM",
+    false,
+    ["decrypt"]
+  );
+
+  const decryptedBuffer = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv },
+    mediaKey,
+    encryptedBuffer
+  );
+
+  return new Blob([decryptedBuffer], { type: mimeType });
+}
+
+export async function encryptMessagePayload({ payload, myUserId, peerPublicKey }) {
+  const textContent = typeof payload === "string" ? payload : JSON.stringify(payload);
+  return encryptText({ text: textContent, myUserId, peerPublicKey });
+}
+
+export async function decryptMessagePayload({ encryptedPayload, myUserId, peerPublicKey }) {
+  const text = await decryptText({ encryptedPayload, myUserId, peerPublicKey });
+  if (text === null) return null;
+  if (!text) return "";
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed === "object" && (parsed.media || parsed.text !== undefined)) {
+      return parsed;
+    }
+  } catch {
+    // Plain text string
+  }
+  return text;
+}
+
