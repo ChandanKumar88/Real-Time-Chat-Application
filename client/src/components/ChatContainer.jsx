@@ -1403,27 +1403,27 @@ export default function ChatContainer({
       )}
 
       {!isForwardMode && (
-      <form onSubmit={onSend} className={`mt-1 shrink-0 rounded-xl p-1.5 sm:mt-2 sm:p-2 ${isDark ? "border border-white/10 bg-black/40" : "border border-slate-300 bg-white/90"}`}>
+      <form onSubmit={onSend} className={`w-full max-w-full min-w-0 mt-1 shrink-0 rounded-2xl p-1.5 sm:mt-2 sm:p-2.5 overflow-hidden box-border ${isDark ? "border border-white/10 bg-black/40" : "border border-slate-300 bg-white/90"}`}>
         {replyToMessage && (
-          <div className={`mb-2 flex items-center gap-2 rounded-xl border-l-2 px-2.5 py-2 text-xs ${isDark ? "border-violet-300 bg-white/10 text-slate-200" : "border-violet-500 bg-slate-100 text-slate-700"}`}>
-            <FiCornerUpLeft className="h-4 w-4 shrink-0 text-violet-300" />
-            <div className="min-w-0 flex-1">
-              <p className="truncate font-semibold">{getMessageAuthor(replyToMessage)}</p>
-              <p className="truncate opacity-80">{getMessagePreview(replyToMessage)}</p>
+          <div className={`mb-1.5 flex w-full min-w-0 max-w-full items-center gap-2 rounded-xl border-l-[3px] px-2.5 py-1.5 text-xs overflow-hidden ${isDark ? "border-violet-400 bg-white/10 text-slate-200" : "border-violet-500 bg-slate-100 text-slate-700"}`}>
+            <FiCornerUpLeft className="h-4 w-4 shrink-0 text-violet-400" />
+            <div className="min-w-0 flex-1 overflow-hidden">
+              <p className="truncate font-semibold text-[11px] sm:text-xs text-violet-400">{getMessageAuthor(replyToMessage)}</p>
+              <p className="truncate text-[11px] sm:text-xs opacity-80">{getMessagePreview(replyToMessage)}</p>
             </div>
             <button
               type="button"
               onClick={onCancelReply}
-              className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${isDark ? "hover:bg-white/10" : "hover:bg-white"}`}
+              className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition ${isDark ? "text-slate-400 hover:bg-white/10 hover:text-white" : "text-slate-500 hover:bg-white hover:text-slate-900"}`}
               title="Cancel reply"
               aria-label="Cancel reply"
             >
-              <FiX />
+              <FiX className="h-3.5 w-3.5" />
             </button>
           </div>
         )}
         {(image || video) && (
-          <div className={`mb-2 flex items-center gap-2 rounded-xl px-2 py-2 text-xs ${isDark ? "bg-white/10 text-slate-200" : "bg-slate-100 text-slate-700"}`}>
+          <div className={`mb-1.5 flex w-full min-w-0 max-w-full items-center gap-2 rounded-xl px-2 py-2 text-xs overflow-hidden ${isDark ? "bg-white/10 text-slate-200" : "bg-slate-100 text-slate-700"}`}>
             <div className={`relative h-12 w-12 shrink-0 overflow-hidden rounded-lg ${isDark ? "bg-black/30" : "bg-white"}`}>
               {image ? (
                 <img src={image} alt="Selected media" className="h-full w-full object-cover" />
@@ -1447,9 +1447,9 @@ export default function ChatContainer({
                 <FiX />
               </button>
             </div>
-            <div className="min-w-0 flex-1">
+            <div className="min-w-0 flex-1 overflow-hidden">
               <p className="truncate font-medium">{video ? "Video attached" : "Image attached"}</p>
-              <p className={`${isDark ? "text-slate-400" : "text-slate-500"}`}>You can remove it before sending.</p>
+              <p className={`truncate text-xs ${isDark ? "text-slate-400" : "text-slate-500"}`}>You can remove it before sending.</p>
             </div>
           </div>
         )}
@@ -1463,14 +1463,14 @@ export default function ChatContainer({
             {mediaError}
           </p>
         )}
-        <div className="flex items-center gap-1.5 sm:gap-2">
+        <div className="flex w-full min-w-0 max-w-full items-center gap-1.5 sm:gap-2">
           <button
             type="button"
             onClick={() => imageInputRef.current?.click()}
-            className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg text-sm transition sm:h-10 sm:w-10 sm:rounded-xl sm:text-base ${isDark ? "border border-white/20 text-slate-300 hover:bg-white/10" : "border border-slate-300 text-slate-700 hover:bg-slate-100"}`}
-            title="Attach image"
+            className={`grid h-8 w-8 shrink-0 place-items-center rounded-full text-sm transition sm:h-10 sm:w-10 sm:text-base ${isDark ? "border border-white/20 text-slate-300 hover:bg-white/10" : "border border-slate-300 text-slate-700 hover:bg-slate-100"}`}
+            title="Attach image or video"
           >
-            <FiImage />
+            <FiImage className="h-4 w-4 sm:h-5 sm:w-5" />
           </button>
           <input
             ref={imageInputRef}
@@ -1525,7 +1525,7 @@ export default function ChatContainer({
           />
           <input
             ref={textInputRef}
-            className={`h-8 min-w-0 flex-1 rounded-lg px-3 text-sm outline-none transition focus:border-violet-400 sm:h-10 sm:rounded-xl ${
+            className={`h-8 min-w-0 flex-1 rounded-full px-3 text-xs sm:text-sm outline-none transition focus:border-violet-400 sm:h-10 sm:px-4 ${
               isDark
                 ? "border border-white/20 bg-transparent text-slate-100 placeholder:text-slate-400"
                 : "border border-slate-300 bg-white text-slate-900 placeholder:text-slate-500"
@@ -1535,11 +1535,14 @@ export default function ChatContainer({
             placeholder="Type a message..."
           />
           <button
+            type="submit"
             disabled={isVideoUploading}
-            className="inline-flex h-8 w-10 shrink-0 items-center justify-center rounded-lg bg-gradient-to-r from-violet-500 to-fuchsia-500 text-sm font-medium text-white transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50 sm:h-10 sm:min-w-[88px] sm:gap-2 sm:rounded-xl sm:px-4"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white shadow-md transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 sm:h-10 sm:w-auto sm:min-w-[84px] sm:gap-2 sm:rounded-xl sm:px-4 sm:flex sm:items-center sm:justify-center"
+            title="Send message"
+            aria-label="Send message"
           >
-            <FiSend />
-            <span className="hidden sm:inline">Send</span>
+            <FiSend className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            <span className="hidden sm:inline text-sm font-medium">Send</span>
           </button>
         </div>
       </form>
