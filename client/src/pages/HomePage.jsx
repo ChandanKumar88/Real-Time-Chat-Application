@@ -353,10 +353,10 @@ export default function HomePage() {
 
   useEffect(() => {
     if (user?.encryptionPassphraseRequired) return;
-    if (!selectedUser) return;
+    if (!selectedUser?._id) return;
     setReplyToMessage(null);
-    return () => stopTyping(selectedUser._id);
-  }, [selectedUser, user?.encryptionPassphraseRequired]);
+    return () => stopTyping(selectedUser?._id);
+  }, [selectedUser?._id, user?.encryptionPassphraseRequired]);
 
   useEffect(() => {
     if (user?.encryptionPassphraseRequired) return;

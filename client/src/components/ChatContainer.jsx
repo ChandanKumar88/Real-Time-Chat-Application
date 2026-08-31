@@ -317,7 +317,7 @@ export default function ChatContainer({
   function getReplyMessage(message) {
     const replyId = getMessageId(message?.replyTo);
     if (!replyId) return null;
-    return messages.find((item) => item._id === replyId) || null;
+    return messages.find((item) => String(item._id) === String(replyId)) || (typeof message?.replyTo === "object" ? message.replyTo : null);
   }
 
   function getHighlightedText(value) {
@@ -972,7 +972,25 @@ export default function ChatContainer({
                     </p>
                   )}
                   {!!getMessageId(m.replyTo) && (
-                    <div className={`mb-2 max-w-[min(70vw,320px)] rounded-xl border-l-2 px-2.5 py-2 text-xs ${isMine ? "border-white/70 bg-black/15 text-white/90" : isDark ? "border-violet-300 bg-black/25 text-slate-200" : "border-violet-500 bg-white/80 text-slate-700"}`}>
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const replyId = getMessageId(m.replyTo);
+                        const targetElem = messageRefs.current.get(String(replyId));
+                        if (targetElem) {
+                          targetElem.scrollIntoView({ behavior: "smooth", block: "center" });
+                          targetElem.classList.add("ring-2", "ring-violet-400", "transition-all", "duration-500");
+                          setTimeout(() => {
+                            targetElem.classList.remove("ring-2", "ring-violet-400");
+                          }, 1500);
+                        }
+                      }}
+                      className={`mb-2 max-w-[min(70vw,320px)] cursor-pointer rounded-xl border-l-2 px-2.5 py-2 text-xs transition active:scale-[0.98] ${
+                        isMine ? "border-white/70 bg-black/15 text-white/90 hover:bg-black/25" : isDark ? "border-violet-300 bg-black/25 text-slate-200 hover:bg-black/35" : "border-violet-500 bg-white/80 text-slate-700 hover:bg-white"
+                      }`}
+                    >
                       <p className={`truncate font-semibold ${isMine ? "text-white" : "text-violet-300"}`}>{getMessageAuthor(repliedMessage)}</p>
                       <p className="line-clamp-2 break-words opacity-85">{getMessagePreview(repliedMessage)}</p>
                     </div>
