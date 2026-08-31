@@ -12,12 +12,14 @@ import {
   FiMicOff,
   FiMinimize2,
   FiMinus,
+  FiMoon,
   FiPhone,
   FiPhoneOff,
   FiPlus,
   FiRotateCcw,
   FiSearch,
   FiShare2,
+  FiSun,
   FiTrash2,
   FiUser,
   FiVideo,
@@ -2185,19 +2187,34 @@ export default function HomePage() {
             <div className="shrink-0 px-6 pb-3 pt-[calc(28px+env(safe-area-inset-top))]">
               <div className="flex items-center justify-between gap-4">
                 <h1 className={`text-4xl font-bold tracking-normal ${theme === "dark" ? "text-white" : "text-slate-950"}`}>QuickChat</h1>
-                <button
-                  type="button"
-                  onClick={logout}
-                  className={`grid h-12 w-12 shrink-0 place-items-center rounded-full border transition ${
-                    theme === "dark"
-                      ? "border-white/10 bg-white/10 text-rose-200 shadow-lg shadow-black/20 hover:bg-white/15"
-                      : "border-slate-200 bg-white text-rose-600 shadow-sm hover:bg-slate-50"
-                  }`}
-                  aria-label="Logout"
-                  title="Logout"
-                >
-                  <FiLogOut className="text-xl" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
+                    className={`grid h-12 w-12 shrink-0 place-items-center rounded-full border transition ${
+                      theme === "dark"
+                        ? "border-white/10 bg-white/10 text-amber-300 shadow-lg shadow-black/20 hover:bg-white/15"
+                        : "border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50"
+                    }`}
+                    aria-label="Toggle theme"
+                    title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+                  >
+                    {theme === "dark" ? <FiSun className="text-xl" /> : <FiMoon className="text-xl" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={logout}
+                    className={`grid h-12 w-12 shrink-0 place-items-center rounded-full border transition ${
+                      theme === "dark"
+                        ? "border-white/10 bg-white/10 text-rose-200 shadow-lg shadow-black/20 hover:bg-white/15"
+                        : "border-slate-200 bg-white text-rose-600 shadow-sm hover:bg-slate-50"
+                    }`}
+                    aria-label="Logout"
+                    title="Logout"
+                  >
+                    <FiLogOut className="text-xl" />
+                  </button>
+                </div>
               </div>
               <div className="relative mt-6">
                 <FiSearch className={`pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 text-2xl ${theme === "dark" ? "text-slate-400" : "text-slate-500"}`} />
