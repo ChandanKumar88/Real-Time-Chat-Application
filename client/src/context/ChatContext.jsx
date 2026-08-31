@@ -15,25 +15,51 @@ import {
 
 const mediaBlobUrlCache = new Map();
 
-export async function uploadEncryptedBlobToCloudinary(blob, fileName = "encrypted.bin") {
+export async function uploadEncryptedBlobToCloudinary(blob, fileName = "encrypted.bin", isVideo = false) {
   const { data } = await api.get("/messages/upload/signature");
   const uploadConfig = data.data;
-  const formData = new FormData();
-  formData.append("file", blob, fileName);
-  formData.append("api_key", uploadConfig.apiKey);
-  formData.append("timestamp", uploadConfig.timestamp);
-  formData.append("signature", uploadConfig.signature);
-  formData.append("folder", uploadConfig.folder);
 
-  const response = await fetch(`https://api.cloudinary.com/v1_1/${uploadConfig.cloudName}/auto/upload`, {
-    method: "POST",
-    body: formData,
-  });
-  const result = await response.json();
-  if (!response.ok || !result.secure_url) {
-    throw new Error(result.error?.message || "Encrypted media upload failed");
+  const actualFileName = isVideo
+    ? (fileName?.endsWith(".mp4") ? fileName : `${(fileName || "video").replace(/\.[^/.]+$/, "")}.mp4`)
+    : (fileName?.endsWith(".jpg") || fileName?.endsWith(".png") ? fileName : `${(fileName || "image").replace(/\.[^/.]+$/, "")}.jpg`);
+
+  const primaryEndpoint = isVideo
+    ? `https://api.cloudinary.com/v1_1/${uploadConfig.cloudName}/video/upload`
+    : `https://api.cloudinary.com/v1_1/${uploadConfig.cloudName}/image/upload`;
+
+  const endpoints = [
+    primaryEndpoint,
+    `https://api.cloudinary.com/v1_1/${uploadConfig.cloudName}/auto/upload`,
+    `https://api.cloudinary.com/v1_1/${uploadConfig.cloudName}/raw/upload`,
+  ];
+
+  let lastErrorMessage = "";
+  for (const endpoint of endpoints) {
+    try {
+      const formData = new FormData();
+      formData.append("file", blob, actualFileName);
+      formData.append("api_key", uploadConfig.apiKey);
+      formData.append("timestamp", uploadConfig.timestamp);
+      formData.append("signature", uploadConfig.signature);
+      formData.append("folder", uploadConfig.folder);
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        body: formData,
+      });
+      const result = await response.json();
+      if (response.ok && result.secure_url) {
+        return result.secure_url;
+      }
+      if (result?.error?.message) {
+        lastErrorMessage = result.error.message;
+      }
+    } catch (err) {
+      lastErrorMessage = err?.message || "Upload network error";
+    }
   }
-  return result.secure_url;
+
+  throw new Error(lastErrorMessage || "Encrypted media upload failed");
 }
 
 export function dataUriToBlob(dataUri) {
@@ -832,7 +858,7 @@ export function ChatProvider({ children }) {
 
       if (rawMediaInput) {
         const { encryptedBlob, mediaKeyBase64, ivBase64, mimeType, fileName, size } = await encryptMediaFile(rawMediaInput);
-        const cloudUrl = await uploadEncryptedBlobToCloudinary(encryptedBlob, fileName || (isVideo ? "video.enc" : "image.enc"));
+        const cloudUrl = await uploadEncryptedBlobToCloudinary(encryptedBlob, fileName || (isVideo ? "video.mp4" : "image.jpg"), isVideo);
         if (localPreviewUrl) {
           mediaBlobUrlCache.set(cloudUrl, localPreviewUrl);
         }
@@ -856,10 +882,21 @@ export function ChatProvider({ children }) {
         messageEnvelope.media = mediaMetadata;
       }
 
+      let peerPublicKey = targetUser?.publicKey;
+      if (!peerPublicKey) {
+        try {
+          const { data } = await api.get(`/users/${targetUserId}`);
+          const freshUser = data?.data || data;
+          peerPublicKey = freshUser?.publicKey;
+        } catch {
+          // ignore
+        }
+      }
+
       const encryptedPayload = await encryptMessagePayload({
         payload: messageEnvelope,
         myUserId: user._id,
-        peerPublicKey: targetUser?.publicKey,
+        peerPublicKey,
       });
 
       const requestBody = {

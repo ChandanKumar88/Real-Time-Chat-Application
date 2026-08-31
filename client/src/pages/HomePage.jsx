@@ -140,6 +140,7 @@ export default function HomePage() {
   const [text, setText] = useState("");
   const [image, setImage] = useState("");
   const [video, setVideo] = useState("");
+  const [mediaFile, setMediaFile] = useState(null);
   const [replyToMessage, setReplyToMessage] = useState(null);
   const [theme, setTheme] = useState(() => localStorage.getItem("chat_theme") || "light");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -623,11 +624,7 @@ export default function HomePage() {
     const serverMessage = error?.response?.data?.message;
 
     if (status === 413) {
-      return "Video payload is too large. Select the video again so it can upload directly first.";
-    }
-
-    if ((payload?.video || payload?.videoUrl) && !serverMessage) {
-      return "Video send failed. Please try uploading the video again.";
+      return "Video payload is too large. Select a smaller video.";
     }
 
     return serverMessage || error?.message || "Failed to send media";
@@ -2105,6 +2102,8 @@ export default function HomePage() {
             }}
             setImage={setImage}
             setVideo={setVideo}
+            mediaFile={mediaFile}
+            setMediaFile={setMediaFile}
             image={image}
             video={video}
             replyToMessage={replyToMessage}
@@ -2153,18 +2152,20 @@ export default function HomePage() {
             }}
             onSend={async (e) => {
               e.preventDefault();
-              if (!selectedUser || (!text.trim() && !image && !video)) return;
+              if (!selectedUser || (!text.trim() && !image && !video && !mediaFile)) return;
               const isUploadedVideoUrl = /^https?:\/\//i.test(video);
               const payload = {
                 text: text.trim(),
                 image,
                 video: isUploadedVideoUrl ? "" : video,
                 videoUrl: isUploadedVideoUrl ? video : "",
+                mediaFile,
                 replyTo: replyToMessage?._id || null,
               };
               setText("");
               setImage("");
               setVideo("");
+              setMediaFile(null);
               setReplyToMessage(null);
               stopTyping(selectedUser._id);
               try {
@@ -2173,6 +2174,7 @@ export default function HomePage() {
                 setText(payload.text);
                 setImage(payload.image);
                 setVideo(payload.videoUrl || payload.video);
+                setMediaFile(payload.mediaFile);
                 setReplyToMessage(replyToMessage);
                 toast.error(getSendErrorMessage(error, payload));
               }
@@ -2381,6 +2383,8 @@ export default function HomePage() {
           }}
           setImage={setImage}
           setVideo={setVideo}
+          mediaFile={mediaFile}
+          setMediaFile={setMediaFile}
           image={image}
           video={video}
           replyToMessage={replyToMessage}
@@ -2428,18 +2432,20 @@ export default function HomePage() {
           }}
           onSend={async (e) => {
             e.preventDefault();
-            if (!selectedUser || (!text.trim() && !image && !video)) return;
+            if (!selectedUser || (!text.trim() && !image && !video && !mediaFile)) return;
             const isUploadedVideoUrl = /^https?:\/\//i.test(video);
             const payload = {
               text: text.trim(),
               image,
               video: isUploadedVideoUrl ? "" : video,
               videoUrl: isUploadedVideoUrl ? video : "",
+              mediaFile,
               replyTo: replyToMessage?._id || null,
             };
             setText("");
             setImage("");
             setVideo("");
+            setMediaFile(null);
             setReplyToMessage(null);
             stopTyping(selectedUser._id);
             try {
@@ -2448,6 +2454,7 @@ export default function HomePage() {
               setText(payload.text);
               setImage(payload.image);
               setVideo(payload.videoUrl || payload.video);
+              setMediaFile(payload.mediaFile);
               setReplyToMessage(replyToMessage);
               toast.error(getSendErrorMessage(error, payload));
             }

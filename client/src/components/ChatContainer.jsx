@@ -22,7 +22,7 @@ import ProfileAvatar from "./ProfileAvatar";
 import { processImageFile } from "../utils/image";
 import { api } from "../services/api";
 
-const MAX_VIDEO_SIZE_MB = 50;
+const MAX_VIDEO_SIZE_MB = 100;
 
 export default function ChatContainer({
   user,
@@ -39,6 +39,8 @@ export default function ChatContainer({
   setVideo,
   image = "",
   video = "",
+  mediaFile = null,
+  setMediaFile,
   replyToMessage = null,
   isTyping = false,
   onSend,
@@ -1418,6 +1420,7 @@ export default function ChatContainer({
                   setMediaError("");
                   setImage("");
                   setVideo("");
+                  if (setMediaFile) setMediaFile(null);
                 }}
                 className="absolute right-1 top-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-black/70 text-[11px] text-white"
                 aria-label="Remove selected media"
@@ -1469,11 +1472,13 @@ export default function ChatContainer({
                     toast.error(message);
                     setImage("");
                     setVideo("");
+                    if (setMediaFile) setMediaFile(null);
                     e.target.value = "";
                     return;
                   }
 
                   setImage("");
+                  if (setMediaFile) setMediaFile(file);
                   const previewUrl = URL.createObjectURL(file);
                   setVideo(previewUrl);
                   setMediaError("");
@@ -1481,6 +1486,7 @@ export default function ChatContainer({
                   return;
                 }
 
+                if (setMediaFile) setMediaFile(file);
                 const compressedImage = await processImageFile(file, {
                   maxWidth: 1280,
                   maxHeight: 1280,
