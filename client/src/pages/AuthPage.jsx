@@ -366,17 +366,31 @@ export default function AuthPage({ mode = "login" }) {
           onSubmit={submit}
           className="w-full min-w-0 max-w-[440px] rounded-3xl border border-white/[0.12] bg-[#0c0d18]/85 p-6 shadow-[0_20px_60px_rgba(0,0,0,0.8)] backdrop-blur-2xl sm:p-8"
         >
-          {/* Mobile Header Logo with matching movement */}
+          {/* Mobile Header Logo with matching movement and all badges */}
           <div className="mb-6 text-center md:hidden">
             <div className="relative mx-auto mb-3 inline-block animate-qc-cluster">
-              <div className="absolute inset-0 -z-10 rounded-full bg-gradient-to-br from-violet-600 to-fuchsia-600 opacity-60 blur-xl animate-qc-glow" />
-              <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-gradient-to-br from-indigo-500 via-violet-600 to-fuchsia-600 text-white shadow-[0_0_30px_rgba(168,85,247,0.45)]">
-                <HiMiniChatBubbleBottomCenterText className="text-3xl text-white" />
+              {/* Pulsing Radial Background Glow */}
+              <div className="absolute inset-0 -z-10 rounded-full bg-gradient-to-br from-violet-600 via-fuchsia-600 to-indigo-600 opacity-60 blur-xl animate-qc-glow" />
+
+              {/* Main Gradient Icon */}
+              <div className="relative z-10 mx-auto grid h-20 w-20 place-items-center rounded-2xl bg-gradient-to-br from-indigo-500 via-violet-600 to-fuchsia-600 text-white shadow-[0_0_35px_rgba(168,85,247,0.5)]">
+                <HiMiniChatBubbleBottomCenterText className="text-4xl text-white drop-shadow" />
               </div>
-              <div className="absolute -right-2 -top-2 grid h-6 w-6 place-items-center rounded-full border border-white/15 bg-[#121124] text-[10px] shadow-lg animate-qc-badge-1">
-                <span className="text-amber-400">⚡</span>
+
+              {/* Top-Right Micro Badge (Lightning) */}
+              <div className="absolute -right-2.5 -top-2 z-20 grid h-8 w-8 place-items-center rounded-xl border border-white/15 bg-[#121124]/90 shadow-xl backdrop-blur-md animate-qc-badge-1">
+                <span className="text-sm text-amber-400">⚡</span>
               </div>
+
+              {/* Bottom-Left Micro Badge (Lock) */}
+              <div className="absolute -bottom-2 -left-4 z-20 grid h-7 w-7 place-items-center rounded-lg border border-white/15 bg-[#121124]/90 shadow-xl backdrop-blur-md animate-qc-badge-2">
+                <span className="text-xs text-amber-300">🔒</span>
+              </div>
+
+              {/* Twinkling Star Particle Left of Badge */}
+              <div className="absolute -left-7 top-[45%] h-2 w-2 rounded-full bg-violet-200 blur-[0.5px] shadow-[0_0_8px_#c4b5fd] animate-qc-star" />
             </div>
+
             <h1 className="text-3xl font-bold tracking-tight text-white">QuickChat</h1>
           </div>
 
