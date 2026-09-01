@@ -316,26 +316,37 @@ export default function AuthPage({ mode = "login" }) {
 
   return (
     <div className="relative grid min-h-screen w-full grid-cols-1 overflow-x-hidden bg-black text-white md:grid-cols-2">
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute left-1/3 top-1/2 h-[280px] w-[280px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-violet-600/40 blur-[80px] sm:h-[420px] sm:w-[420px]" />
-        <div className="absolute left-1/2 top-1/2 h-[260px] w-[260px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-indigo-500/25 blur-[70px] sm:h-[360px] sm:w-[360px]" />
+      {/* Background Subtle Ambient Glow */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute left-1/3 top-1/2 h-[320px] w-[320px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-violet-600/30 blur-[90px] sm:h-[450px] sm:w-[450px]" />
+        <div className="absolute left-1/2 top-1/2 h-[280px] w-[280px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-indigo-500/20 blur-[80px] sm:h-[380px] sm:w-[380px]" />
       </div>
 
+      {/* Left Column Brand Presentation (Desktop/Tablet) */}
       <section className="relative hidden items-center justify-center p-10 md:flex">
         <div className="text-center">
-          <div className="mx-auto mb-4 grid h-20 w-20 place-items-center rounded-3xl bg-gradient-to-br from-indigo-400 to-violet-600 shadow-lg shadow-violet-500/30">
-            <HiMiniChatBubbleBottomCenterText className="text-4xl text-white" />
+          <div className="mx-auto mb-4 grid h-20 w-20 place-items-center rounded-3xl bg-gradient-to-br from-indigo-400 via-violet-500 to-fuchsia-600 shadow-xl shadow-violet-500/25">
+            <HiMiniChatBubbleBottomCenterText className="text-4xl text-white drop-shadow" />
           </div>
-          <h1 className="text-6xl font-semibold tracking-tight">QuickChat</h1>
+          <h1 className="text-6xl font-bold tracking-tight text-white">QuickChat</h1>
         </div>
       </section>
 
-      <section className="relative grid min-w-0 place-items-center px-3 py-8 sm:p-4">
+      {/* Right Column Form (Mobile & Desktop) */}
+      <section className="relative grid min-w-0 place-items-center px-3 py-8 sm:p-6">
         <form
           onSubmit={submit}
-          className="w-full min-w-0 max-w-[430px] rounded-xl border border-white/20 bg-black/45 p-4 shadow-2xl backdrop-blur-md sm:p-6"
+          className="w-full min-w-0 max-w-[440px] rounded-2xl border border-white/20 bg-black/60 p-5 shadow-2xl backdrop-blur-xl transition-all duration-300 sm:p-7"
         >
-          <h2 className="mb-5 text-3xl font-semibold">
+          {/* Mobile Header Logo */}
+          <div className="mb-6 text-center md:hidden">
+            <div className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-indigo-400 via-violet-500 to-fuchsia-600 text-white shadow-lg shadow-violet-500/25">
+              <HiMiniChatBubbleBottomCenterText className="text-3xl text-white" />
+            </div>
+            <h1 className="text-3xl font-bold tracking-tight text-white">QuickChat</h1>
+          </div>
+
+          <h2 className="mb-5 text-2xl font-bold tracking-tight text-white sm:text-3xl">
             {showForgotPassword
               ? forgotStep === "email"
                 ? "Forgot password"
@@ -554,7 +565,7 @@ export default function AuthPage({ mode = "login" }) {
             </>
           )}
           <button
-            className={`w-full rounded-md bg-gradient-to-r from-violet-500 to-fuchsia-500 py-2.5 font-medium text-white transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-70 ${showForgotPassword || googleRecoveryUser ? "hidden" : ""}`}
+            className={`w-full rounded-xl bg-gradient-to-r from-violet-600 via-fuchsia-600 to-violet-600 py-3 text-sm font-semibold text-white shadow-lg shadow-violet-500/25 transition-all duration-300 hover:opacity-95 hover:shadow-violet-500/40 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 ${showForgotPassword || googleRecoveryUser ? "hidden" : ""}`}
             disabled={
               authBusy ||
               (showOtpStep && otp.length !== 6) ||
