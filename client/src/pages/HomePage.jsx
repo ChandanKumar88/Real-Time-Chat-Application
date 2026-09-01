@@ -34,6 +34,7 @@ import Sidebar from "../components/Sidebar";
 import ChatContainer from "../components/ChatContainer";
 import RightSidebar from "../components/RightSidebar";
 import ProfileAvatar from "../components/ProfileAvatar";
+import ProfilePhotoModal from "../components/ProfilePhotoModal";
 import bgImage from "../assets/bgImage.svg";
 import { processImageFile } from "../utils/image";
 import { createCallMediaE2ee } from "../utils/callMediaE2ee";
@@ -162,6 +163,7 @@ export default function HomePage() {
   const [previewZoom, setPreviewZoom] = useState(1);
   const [previewVideoRatio, setPreviewVideoRatio] = useState(null);
   const [isPreviewDeleting, setIsPreviewDeleting] = useState(false);
+  const [viewingProfileUser, setViewingProfileUser] = useState(null);
   const [recoveryPassphrase, setRecoveryPassphrase] = useState("");
   const [recoveryBusy, setRecoveryBusy] = useState(false);
   const [callState, setCallState] = useState({
@@ -846,8 +848,18 @@ export default function HomePage() {
                     : "hover:bg-slate-100"
               }`}
             >
-              <div className="relative shrink-0">
-                <ProfileAvatar src={item.profilePic} name={item.fullName} className="h-14 w-14 rounded-full object-cover" />
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setViewingProfileUser(item);
+                }}
+                className="relative shrink-0 cursor-pointer rounded-full transition-transform active:scale-95"
+                title={`View ${item.fullName}'s profile photo`}
+                aria-label={`View ${item.fullName}'s profile photo`}
+              >
+                <ProfileAvatar src={item.profilePic} name={item.fullName} className="h-14 w-14 rounded-full object-cover shadow-sm" />
                 <span
                   className={`absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 ${
                     theme === "dark" ? "border-[#080d10]" : "border-white"
@@ -894,7 +906,19 @@ export default function HomePage() {
             const formattedTime = formatCallDateTime(call.createdAt, call.time);
             return (
               <div key={call.id} className="flex items-center gap-4 rounded-2xl px-1 py-3">
-                <ProfileAvatar src={call.profilePic} name={call.name} className="h-14 w-14 rounded-full object-cover" />
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setViewingProfileUser(call);
+                  }}
+                  className="shrink-0 cursor-pointer rounded-full transition-transform active:scale-95"
+                  title={`View ${call.name}'s profile photo`}
+                  aria-label={`View ${call.name}'s profile photo`}
+                >
+                  <ProfileAvatar src={call.profilePic} name={call.name} className="h-14 w-14 rounded-full object-cover shadow-sm" />
+                </div>
                 <div className="min-w-0 flex-1 border-b border-white/5 pb-3">
                   <div className="flex min-w-0 items-center justify-between gap-3">
                     <p className={`truncate text-base font-semibold ${theme === "dark" ? "text-slate-100" : "text-slate-900"}`}>{call.name}</p>
@@ -2297,6 +2321,7 @@ export default function HomePage() {
           conversationPreviews={conversationPreviews}
           activeTab={activeDesktopTab}
           onTabChange={handleDesktopTabChange}
+          onOpenProfilePhoto={setViewingProfileUser}
         />
       </div>
 
@@ -2317,6 +2342,7 @@ export default function HomePage() {
           conversationPreviews={conversationPreviews}
           isMobileOpen
           onCloseMobile={() => setIsSidebarOpen(false)}
+          onOpenProfilePhoto={setViewingProfileUser}
         />
       )}
 
@@ -2447,6 +2473,7 @@ export default function HomePage() {
               toast.error(error?.response?.data?.message || "Failed to delete message");
             }
           }}
+          onOpenProfilePhoto={setViewingProfileUser}
           onSend={async (e) => {
             e.preventDefault();
             if (!selectedUser || (!text.trim() && !image && !video && !mediaFile)) return;
@@ -2585,6 +2612,7 @@ export default function HomePage() {
             }}
             theme={theme}
             onCloseMobile={() => setIsSharedMediaOpen(false)}
+            onOpenProfilePhoto={setViewingProfileUser}
           />
         </div>
       ) : null}
@@ -2620,6 +2648,7 @@ export default function HomePage() {
           theme={theme}
           mobile
           onCloseMobile={() => setIsMediaOpen(false)}
+          onOpenProfilePhoto={setViewingProfileUser}
         />
       ) : null}
 
@@ -3033,6 +3062,12 @@ export default function HomePage() {
           </div>
         </div>
       ) : null}
+
+      <ProfilePhotoModal
+        user={viewingProfileUser}
+        isOpen={Boolean(viewingProfileUser)}
+        onClose={() => setViewingProfileUser(null)}
+      />
       </div>
     </div>
   );

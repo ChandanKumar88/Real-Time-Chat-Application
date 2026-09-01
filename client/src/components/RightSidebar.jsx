@@ -15,6 +15,7 @@ export default function RightSidebar({
   theme = "dark",
   mobile = false,
   onCloseMobile,
+  onOpenProfilePhoto,
 }) {
   const isDark = theme === "dark";
   const [activeSection, setActiveSection] = useState("contact");
@@ -143,7 +144,22 @@ export default function RightSidebar({
 
           {activeSection === "contact" && (
             <div className="chat-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto pr-1">
-              <ProfileAvatar src={selectedUser.profilePic} name={selectedUser.fullName} className="mx-auto h-20 w-20 rounded-full object-cover sm:h-28 sm:w-28" />
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => onOpenProfilePhoto?.(selectedUser)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onOpenProfilePhoto?.(selectedUser);
+                  }
+                }}
+                className="mx-auto w-fit cursor-pointer rounded-full transition-transform hover:scale-105 active:scale-95"
+                title={`View ${selectedUser.fullName}'s profile photo`}
+                aria-label={`View ${selectedUser.fullName}'s profile photo`}
+              >
+                <ProfileAvatar src={selectedUser.profilePic} name={selectedUser.fullName} className="mx-auto h-20 w-20 rounded-full object-cover shadow-md sm:h-28 sm:w-28" />
+              </div>
               <h3 className={`mt-3 text-center text-lg font-semibold sm:text-xl ${isDark ? "text-slate-100" : "text-slate-900"}`}>{selectedUser.fullName}</h3>
               <p
                 className={`mt-1 flex items-center justify-center gap-1.5 text-xs ${

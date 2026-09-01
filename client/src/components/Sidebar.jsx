@@ -74,6 +74,7 @@ export default function Sidebar({
   onCloseMobile,
   activeTab,
   onTabChange,
+  onOpenProfilePhoto,
 }) {
   const [showMenu, setShowMenu] = useState(false);
   const [localActiveTab, setLocalActiveTab] = useState("chats");
@@ -120,9 +121,9 @@ export default function Sidebar({
       }`}
     >
       <div className="mb-4 flex shrink-0 items-center justify-between px-1">
-        <div className="flex items-center gap-2">
-          <img src={logoIcon} alt="QuickChat" className="h-5 w-5" />
-          <h1 className={`text-lg font-medium ${isDark ? "text-white" : "text-slate-900"}`}>QuickChat</h1>
+        <div className="flex items-center gap-2.5">
+          <img src={logoIcon} alt="QuickChat" className="h-6 w-6 rounded-md drop-shadow-sm" />
+          <h1 className={`text-lg font-semibold tracking-tight ${isDark ? "text-white" : "text-slate-900"}`}>QuickChat</h1>
         </div>
         <div className="relative flex items-center gap-1 text-sm">
           {onCloseMobile && (
@@ -240,7 +241,26 @@ export default function Sidebar({
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <ProfileAvatar src={u.profilePic} name={u.fullName} className="h-11 w-11 rounded-full object-cover" />
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenProfilePhoto?.(u);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          onOpenProfilePhoto?.(u);
+                        }
+                      }}
+                      className="shrink-0 cursor-pointer rounded-full transition-transform hover:scale-105 active:scale-95"
+                      title={`View ${u.fullName}'s profile photo`}
+                      aria-label={`View ${u.fullName}'s profile photo`}
+                    >
+                      <ProfileAvatar src={u.profilePic} name={u.fullName} className="h-11 w-11 rounded-full object-cover shadow-sm" />
+                    </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex min-w-0 items-center justify-between gap-2">
                         <p className={`truncate text-sm font-semibold ${isDark ? "text-slate-100" : "text-slate-900"}`}>{u.fullName}</p>
@@ -312,7 +332,26 @@ export default function Sidebar({
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <ProfileAvatar src={call.profilePic} name={call.name} className="h-11 w-11 rounded-full object-cover" />
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenProfilePhoto?.(call);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          onOpenProfilePhoto?.(call);
+                        }
+                      }}
+                      className="shrink-0 cursor-pointer rounded-full transition-transform hover:scale-105 active:scale-95"
+                      title={`View ${call.name}'s profile photo`}
+                      aria-label={`View ${call.name}'s profile photo`}
+                    >
+                      <ProfileAvatar src={call.profilePic} name={call.name} className="h-11 w-11 rounded-full object-cover shadow-sm" />
+                    </div>
                     <div className="min-w-0 flex-1">
                       <p className={`truncate text-sm font-semibold ${isDark ? "text-slate-100" : "text-slate-900"}`}>{call.name}</p>
                       <p className={`flex items-center gap-1 truncate text-[11px] ${statusClass}`}>

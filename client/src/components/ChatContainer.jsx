@@ -62,6 +62,7 @@ export default function ChatContainer({
   forwardUsers = [],
   onForwardMessages,
   theme = "dark",
+  onOpenProfilePhoto,
 }) {
   const imageInputRef = useRef(null);
   const textInputRef = useRef(null);
@@ -706,8 +707,8 @@ export default function ChatContainer({
     return (
       <main className={`grid h-full min-h-0 place-items-center overflow-hidden rounded-2xl p-5 ${isDark ? "border border-white/10 bg-black/10" : "border border-slate-300 bg-white/70"}`}>
         <div className="text-center">
-          <img src={logoIcon} alt="QuickChat" className="mx-auto mb-3 h-12 w-12 opacity-90" />
-          <p className={`text-xl font-medium ${isDark ? "text-slate-100" : "text-slate-800"}`}>Chat anytime, anywhere</p>
+          <img src={logoIcon} alt="QuickChat" className="mx-auto mb-4 h-16 w-16 drop-shadow-[0_8px_25px_rgba(168,85,247,0.45)]" />
+          <p className={`text-xl font-semibold tracking-tight ${isDark ? "text-slate-100" : "text-slate-800"}`}>Chat anytime, anywhere</p>
         </div>
       </main>
     );
@@ -750,7 +751,26 @@ export default function ChatContainer({
               <FiArrowLeft className="text-xl" />
             </span>
           )}
-          <ProfileAvatar src={selectedUser.profilePic} name={selectedUser.fullName} className="h-8 w-8 shrink-0 rounded-full object-cover sm:h-9 sm:w-9 lg:h-12 lg:w-12" />
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenProfilePhoto?.(selectedUser);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                e.stopPropagation();
+                onOpenProfilePhoto?.(selectedUser);
+              }
+            }}
+            className="shrink-0 cursor-pointer rounded-full transition-transform hover:scale-105 active:scale-95"
+            title={`View ${selectedUser.fullName}'s profile photo`}
+            aria-label={`View ${selectedUser.fullName}'s profile photo`}
+          >
+            <ProfileAvatar src={selectedUser.profilePic} name={selectedUser.fullName} className="h-8 w-8 shrink-0 rounded-full object-cover shadow-sm sm:h-9 sm:w-9 lg:h-12 lg:w-12" />
+          </div>
           <div className="min-w-0">
             <p className={`truncate text-sm font-semibold lg:text-lg ${isDark ? "text-slate-100" : "text-slate-900"}`}>{selectedUser.fullName}</p>
             <p
