@@ -4,6 +4,7 @@ import toast from "react-hot-toast";
 import { HiMiniChatBubbleBottomCenterText } from "react-icons/hi2";
 import { useAuth } from "../context/AuthContext";
 import { processImageFile } from "../utils/image";
+import { api } from "../services/api";
 
 export default function AuthPage({ mode = "login" }) {
   const [isSignup, setIsSignup] = useState(mode === "signup");
@@ -37,6 +38,11 @@ export default function AuthPage({ mode = "login" }) {
   const showOtpStep = isSignup && Boolean(otpSentTo);
   const showForgotPassword = Boolean(forgotStep);
   const isGoogleRecoverySetup = googleRecoveryUser && !googleRecoveryUser.encryptionKeyBackup;
+
+  useEffect(() => {
+    // Warm up the backend server immediately when AuthPage opens
+    api.get("/health").catch(() => {});
+  }, []);
 
   const handleGoogleCredential = useCallback(
     async (credential) => {

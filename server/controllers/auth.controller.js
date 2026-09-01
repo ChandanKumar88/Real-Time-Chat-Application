@@ -37,7 +37,9 @@ async function startSession(user) {
   const sessionId = createSessionId();
   user.activeSessionId = sessionId;
   user.activeSessionStartedAt = new Date();
-  await user.save();
+  await User.findByIdAndUpdate(user._id, {
+    $set: { activeSessionId: sessionId, activeSessionStartedAt: user.activeSessionStartedAt },
+  });
   return sessionId;
 }
 
