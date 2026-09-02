@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { FiImage, FiLink, FiMinusCircle, FiSlash, FiTrash2, FiUser, FiX } from "react-icons/fi";
 import ProfileAvatar from "./ProfileAvatar";
+import { getOptimizedMediaUrl, getVideoPosterUrl } from "../utils/mediaUrl";
 
 export default function RightSidebar({
   selectedUser,
@@ -217,9 +218,15 @@ export default function RightSidebar({
                     <button
                       type="button"
                       onClick={() => onPreviewMedia?.({ id: m._id, type: "image", src: m.image })}
-                      className="block w-full"
+                      className="block w-full overflow-hidden rounded-xl bg-black/10"
                     >
-                      <img src={m.image} className="h-24 w-full rounded-xl object-cover" />
+                      <img
+                        src={getOptimizedMediaUrl(m.image, { width: 360 })}
+                        alt="Shared media"
+                        loading="lazy"
+                        decoding="async"
+                        className="h-24 w-full rounded-xl object-cover"
+                      />
                     </button>
                     {m.senderId === currentUserId && (
                       <button
@@ -237,10 +244,16 @@ export default function RightSidebar({
                     <button
                       type="button"
                       onClick={() => onPreviewMedia?.({ id: m._id, type: "video", src: m.video })}
-                      className="block w-full"
+                      className="block w-full overflow-hidden rounded-xl bg-black/10"
                     >
-                      <video className="h-24 w-full rounded-xl object-cover">
-                        <source src={m.video} />
+                      <video
+                        className="h-24 w-full rounded-xl object-cover"
+                        poster={getVideoPosterUrl(m.video, { width: 360 })}
+                        preload="none"
+                        muted
+                        playsInline
+                      >
+                        <source src={getOptimizedMediaUrl(m.video, { width: 480 })} />
                       </video>
                     </button>
                     {m.senderId === currentUserId && (

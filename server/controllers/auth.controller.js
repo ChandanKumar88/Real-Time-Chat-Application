@@ -131,6 +131,9 @@ async function verifySignupOtp(req, res) {
   if (pendingSignup.profilePic) {
     const uploadResult = await cloudinary.uploader.upload(pendingSignup.profilePic, {
       folder: "chat-app/profiles",
+      transformation: [
+        { width: 400, height: 400, crop: "fill", gravity: "face", quality: "auto:good", fetch_format: "auto" }
+      ]
     });
     uploadedProfilePic = uploadResult.secure_url;
   }

@@ -141,6 +141,9 @@ async function sendMessage(req, res) {
   if (image && !imageUrl) {
     const uploaded = await cloudinary.uploader.upload(image, {
       folder: "chat-app/messages",
+      transformation: [
+        { quality: "auto:good", fetch_format: "auto" }
+      ]
     });
     imageUrl = uploaded.secure_url;
   }
@@ -150,6 +153,9 @@ async function sendMessage(req, res) {
     const uploadedVideo = await cloudinary.uploader.upload(video, {
       folder: "chat-app/messages",
       resource_type: "video",
+      transformation: [
+        { quality: "auto:good", fetch_format: "auto" }
+      ]
     });
     videoUrl = uploadedVideo.secure_url;
   }

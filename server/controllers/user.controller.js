@@ -160,6 +160,9 @@ async function updateProfile(req, res) {
     if (profilePic) {
       const uploadResult = await cloudinary.uploader.upload(profilePic, {
         folder: "chat-app/profiles",
+        transformation: [
+          { width: 400, height: 400, crop: "fill", gravity: "face", quality: "auto:good", fetch_format: "auto" }
+        ]
       });
       uploadedProfilePic = uploadResult.secure_url;
       updates.profilePic = uploadedProfilePic;

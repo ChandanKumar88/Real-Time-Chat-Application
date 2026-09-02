@@ -1,13 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
+import { getOptimizedMediaUrl } from "../utils/mediaUrl";
 
 export default function ProfileAvatar({ src, name = "User", className = "" }) {
   const [hasError, setHasError] = useState(false);
   const normalizedSrc = typeof src === "string" ? src.trim() : "";
-  const showImage = normalizedSrc && !hasError;
+  const optimizedSrc = useMemo(() => {
+    return getOptimizedMediaUrl(normalizedSrc, { width: 160, isProfile: true });
+  }, [normalizedSrc]);
+  const showImage = optimizedSrc && !hasError;
 
   useEffect(() => {
     setHasError(false);
-  }, [normalizedSrc]);
+  }, [optimizedSrc]);
 
   const initial = useMemo(() => {
     const trimmed = (name || "").trim();
@@ -17,9 +21,11 @@ export default function ProfileAvatar({ src, name = "User", className = "" }) {
   if (showImage) {
     return (
       <img
-        src={normalizedSrc}
+        src={optimizedSrc}
         alt={name}
         className={className}
+        loading="lazy"
+        decoding="async"
         onError={() => setHasError(true)}
       />
     );

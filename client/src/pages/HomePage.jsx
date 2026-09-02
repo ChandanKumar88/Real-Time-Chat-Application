@@ -37,6 +37,7 @@ import ProfileAvatar from "../components/ProfileAvatar";
 import ProfilePhotoModal from "../components/ProfilePhotoModal";
 import bgImage from "../assets/bgImage.svg";
 import { processImageFile } from "../utils/image";
+import { getOptimizedMediaUrl, getVideoPosterUrl } from "../utils/mediaUrl";
 import { createCallMediaE2ee } from "../utils/callMediaE2ee";
 
 const CALL_EVENT_POLL_INTERVAL_MS = 900;
@@ -2982,8 +2983,9 @@ export default function HomePage() {
             >
               {previewMedia.type === "image" ? (
                 <img
-                  src={previewMedia.src}
+                  src={getOptimizedMediaUrl(previewMedia.src, { width: 1920 })}
                   alt="Shared media preview"
+                  decoding="async"
                   className={`max-h-full max-w-full object-contain transition-transform duration-150 ${
                     previewZoom > 1 ? "cursor-zoom-out" : "cursor-zoom-in"
                   }`}
@@ -3002,6 +3004,7 @@ export default function HomePage() {
                   controls
                   autoPlay
                   playsInline
+                  poster={getVideoPosterUrl(previewMedia.src, { width: 960 })}
                   onLoadedMetadata={(event) => {
                     const { videoWidth, videoHeight } = event.currentTarget;
                     if (!videoWidth || !videoHeight) return;
@@ -3011,7 +3014,7 @@ export default function HomePage() {
                     isPortraitPreviewVideo ? "max-h-full max-w-[min(88vw,430px)]" : "max-h-full max-w-full"
                   }`}
                 >
-                  <source src={previewMedia.src} />
+                  <source src={getOptimizedMediaUrl(previewMedia.src)} />
                 </video>
               )}
             </div>
@@ -3035,12 +3038,22 @@ export default function HomePage() {
                     aria-label={`Open media ${index + 1}`}
                   >
                     {item.type === "image" ? (
-                      <img src={item.src} alt="" className="h-full w-full object-cover" />
+                      <img
+                        src={getOptimizedMediaUrl(item.src, { width: 240 })}
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                        className="h-full w-full object-cover"
+                      />
                     ) : (
                       <>
-                        <video className="h-full w-full object-cover">
-                          <source src={item.src} />
-                        </video>
+                        <img
+                          src={getVideoPosterUrl(item.src, { width: 240 }) || item.src}
+                          alt=""
+                          loading="lazy"
+                          decoding="async"
+                          className="h-full w-full object-cover"
+                        />
                         <span className="absolute bottom-1 left-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-white">
                           Video
                         </span>
