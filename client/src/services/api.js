@@ -12,6 +12,7 @@ export const api = axios.create({
 });
 
 let manualLogoutInProgress = false;
+let lastSessionReplacedTimestamp = 0;
 
 export function beginManualLogout() {
   manualLogoutInProgress = true;
@@ -46,7 +47,11 @@ api.interceptors.response.use(
 
     if (isSessionReplaced) {
       localStorage.removeItem("chat_token");
-      window.dispatchEvent(new CustomEvent("quickchat:session-replaced", { detail: { message } }));
+      const now = Date.now();
+      if (now - lastSessionReplacedTimestamp > 5000) {
+        lastSessionReplacedTimestamp = now;
+        window.dispatchEvent(new CustomEvent("quickchat:session-replaced", { detail: { message } }));
+      }
     }
 
     return Promise.reject(error);

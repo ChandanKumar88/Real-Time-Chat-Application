@@ -151,9 +151,10 @@ async function sendMessage(req, res) {
 
   let videoUrl = forwardedVideoUrl;
   if (video && !videoUrl) {
-    const uploadedVideo = await cloudinary.uploader.upload(video, {
+    const uploadedVideo = await cloudinary.uploader.upload_large(video, {
       folder: "chat-app/messages",
       resource_type: "video",
+      chunk_size: 6000000,
     });
     videoUrl = uploadedVideo.secure_url;
   }
@@ -336,4 +337,61 @@ async function deleteConversation(req, res) {
   res.json({ success: true, message: "Chat deleted", data: { userId } });
 }
 
-module.exports = { getConversation, getUploadSignature, sendMessage, markSeen, deleteMessage, clearConversation, deleteConversation };
+async function uploadMedia(req, res) {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: "No file provided" });
+    }
+
+    const isVideo =
+      req.body.isVideo === "true" ||
+      req.file.mimetype?.startsWith("video/") ||
+      /\.(mp4|mov|webm|mkv|avi|m4v|3gp|flv|wmv|ts)$/i.test(req.file.originalname || "");
+
+    const resourceType = isVideo ? "video" : "auto";
+
+    const uploadPromise = new Promise((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        {
+          folder: "chat-app/messages",
+          resource_type: resourceType,
+          chunk_size: 6000000,
+        },
+        (error, result) => {
+          if (error) return reject(error);
+          resolve(result);
+        }
+      );
+      stream.end(req.file.buffer);
+    });
+
+    const result = await uploadPromise;
+
+    return res.json({
+      success: true,
+      data: {
+        url: result.secure_url,
+        publicId: result.public_id,
+        format: result.format,
+        bytes: result.bytes,
+      },
+    });
+  } catch (error) {
+    console.error("Upload media error:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to upload media",
+    });
+  }
+}
+
+module.exports = {
+  getConversation,
+  getUploadSignature,
+  sendMessage,
+  markSeen,
+  deleteMessage,
+  clearConversation,
+  deleteConversation,
+  uploadMedia,
+};

@@ -56,8 +56,8 @@ const io = new Server(server, {
 app.set("io", io);
 
 app.use(cors(corsOptions));
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+app.use(express.json({ limit: "150mb" }));
+app.use(express.urlencoded({ extended: true, limit: "150mb" }));
 
 app.get("/api/health", (_req, res) => {
   res.json({ success: true, message: "Server is running" });

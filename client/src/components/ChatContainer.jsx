@@ -1515,7 +1515,11 @@ export default function ChatContainer({
               if (!file) return;
               setMediaError("");
               try {
-                if (file.type.startsWith("video/")) {
+                const isVideoFile =
+                  file.type?.startsWith("video/") ||
+                  /\.(mp4|mov|webm|mkv|avi|m4v|3gp|flv|wmv|ts)$/i.test(file.name || "");
+
+                if (isVideoFile) {
                   const maxVideoBytes = MAX_VIDEO_SIZE_MB * 1024 * 1024;
                   if (file.size > maxVideoBytes) {
                     const message = `Video ${MAX_VIDEO_SIZE_MB}MB or smaller upload karo.`;

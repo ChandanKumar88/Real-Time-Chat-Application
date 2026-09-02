@@ -56,7 +56,11 @@ export function AuthProvider({ children }) {
     function handleSessionReplaced(event) {
       if (isManualLogoutInProgress()) return;
       setUser(null);
-      toast.error(event.detail?.message || "This account was logged in on another device.");
+      toast.dismiss();
+      toast.error(event.detail?.message || "You are logged out because this account has another active session", {
+        id: "session-replaced-toast",
+        duration: 4000,
+      });
     }
 
     window.addEventListener("quickchat:session-replaced", handleSessionReplaced);
