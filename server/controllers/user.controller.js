@@ -3,6 +3,7 @@ const User = require("../models/User");
 const Message = require("../models/Message");
 const TypingStatus = require("../models/TypingStatus");
 const { cloudinary } = require("../config/cloudinary");
+const { deleteCloudinaryMedia } = require("../utils/cloudinaryCleanup");
 const { getOnlineUserIds } = require("../socket/presenceStore");
 
 const ONLINE_GRACE_MS = 60 * 1000;
@@ -158,6 +159,12 @@ async function updateProfile(req, res) {
 
   try {
     if (profilePic) {
+      // Find old user to delete old profilePic from Cloudinary if replacing
+      const existingUser = await User.findById(req.user.id).select("profilePic");
+      if (existingUser?.profilePic) {
+        await deleteCloudinaryMedia(existingUser.profilePic, "image");
+      }
+
       const uploadResult = await cloudinary.uploader.upload(profilePic, {
         folder: "chat-app/profiles",
         transformation: [
@@ -180,6 +187,22 @@ async function updateProfile(req, res) {
 
 async function deleteAccount(req, res) {
   const userId = req.user.id;
+
+  const user = await User.findById(userId);
+  if (user?.profilePic) {
+    await deleteCloudinaryMedia(user.profilePic, "image");
+  }
+
+  // Find all messages involving this user to clean their media
+  const messagesWithMedia = await Message.find({
+    $or: [{ senderId: userId }, { receiverId: userId }],
+    $or: [{ image: { $ne: "" } }, { video: { $ne: "" } }],
+  });
+
+  for (const m of messagesWithMedia) {
+    if (m.image) await deleteCloudinaryMedia(m.image, "image");
+    if (m.video) await deleteCloudinaryMedia(m.video, "video");
+  }
 
   await Message.deleteMany({
     $or: [{ senderId: userId }, { receiverId: userId }],

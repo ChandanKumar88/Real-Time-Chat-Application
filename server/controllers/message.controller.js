@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const Message = require("../models/Message");
 const User = require("../models/User");
 const { cloudinary } = require("../config/cloudinary");
+const { deleteCloudinaryMedia } = require("../utils/cloudinaryCleanup");
 const { getSocketIdsByUserId } = require("../socket/presenceStore");
 const { sendMessagePushNotification } = require("../utils/pushNotifications");
 
@@ -224,7 +225,20 @@ async function deleteMessage(req, res) {
     return res.status(403).json({ success: false, message: "Not allowed" });
   }
 
-  await Message.findByIdAndUpdate(messageId, { $addToSet: { hiddenFor: req.user.id } });
+  const hiddenList = new Set((message.hiddenFor || []).map((id) => id.toString()));
+  hiddenList.add(req.user.id);
+
+  // If both sender and receiver have hidden/deleted it, permanently purge from DB and Cloudinary
+  const isSenderHidden = hiddenList.has(message.senderId.toString());
+  const isReceiverHidden = hiddenList.has(message.receiverId.toString());
+
+  if (isSenderHidden && isReceiverHidden) {
+    if (message.image) await deleteCloudinaryMedia(message.image, "image");
+    if (message.video) await deleteCloudinaryMedia(message.video, "video");
+    await Message.findByIdAndDelete(messageId);
+  } else {
+    await Message.findByIdAndUpdate(messageId, { $addToSet: { hiddenFor: req.user.id } });
+  }
 
   const io = req.app.get("io");
   const mySocketIds = getSocketIdsByUserId(req.user.id);
@@ -239,6 +253,25 @@ async function clearConversation(req, res) {
   const { userId } = req.params;
   if (!userId || !mongoose.isValidObjectId(userId)) {
     return res.status(400).json({ success: false, message: "Invalid conversation user" });
+  }
+
+  // Find messages where the other party has already deleted/hidden them
+  const fullyPurgeable = await Message.find({
+    $or: [
+      { senderId: req.user.id, receiverId: userId },
+      { senderId: userId, receiverId: req.user.id },
+    ],
+    hiddenFor: userId,
+  });
+
+  if (fullyPurgeable.length > 0) {
+    for (const msg of fullyPurgeable) {
+      if (msg.image) deleteCloudinaryMedia(msg.image, "image");
+      if (msg.video) deleteCloudinaryMedia(msg.video, "video");
+    }
+    await Message.deleteMany({
+      _id: { $in: fullyPurgeable.map((m) => m._id) },
+    });
   }
 
   await Message.updateMany({
@@ -264,6 +297,24 @@ async function deleteConversation(req, res) {
   const { userId } = req.params;
   if (!userId || !mongoose.isValidObjectId(userId)) {
     return res.status(400).json({ success: false, message: "Invalid conversation user" });
+  }
+
+  const fullyPurgeable = await Message.find({
+    $or: [
+      { senderId: req.user.id, receiverId: userId },
+      { senderId: userId, receiverId: req.user.id },
+    ],
+    hiddenFor: userId,
+  });
+
+  if (fullyPurgeable.length > 0) {
+    for (const msg of fullyPurgeable) {
+      if (msg.image) deleteCloudinaryMedia(msg.image, "image");
+      if (msg.video) deleteCloudinaryMedia(msg.video, "video");
+    }
+    await Message.deleteMany({
+      _id: { $in: fullyPurgeable.map((m) => m._id) },
+    });
   }
 
   await Message.updateMany({
