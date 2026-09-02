@@ -46,28 +46,31 @@ export default function App() {
       <BrowserRouter>
         <Toaster
           position="top-center"
-          gutter={12}
+          gutter={10}
           containerStyle={{
-            top: 20,
-            left: 16,
-            right: 16,
+            top: "max(16px, env(safe-area-inset-top, 16px))",
+            left: 12,
+            right: 12,
+            zIndex: 999999,
           }}
           toastOptions={{
             duration: 4000,
             style: {
-              background: "rgba(14, 16, 28, 0.94)",
+              background: "rgba(18, 22, 36, 0.96)",
               color: "#f8fafc",
-              border: "1px solid rgba(255, 255, 255, 0.12)",
-              backdropFilter: "blur(20px)",
-              WebkitBackdropFilter: "blur(20px)",
-              boxShadow: "0 20px 45px -8px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.08)",
-              borderRadius: "18px",
-              padding: "11px 18px",
-              fontSize: "13.5px",
+              border: "1px solid rgba(255, 255, 255, 0.14)",
+              backdropFilter: "blur(24px)",
+              WebkitBackdropFilter: "blur(24px)",
+              boxShadow: "0 20px 45px -8px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.08)",
+              borderRadius: "16px",
+              padding: "12px 18px",
+              fontSize: "14px",
               fontWeight: "500",
-              maxWidth: "460px",
+              maxWidth: "calc(100vw - 24px)",
+              width: "max-content",
               lineHeight: "1.45",
               letterSpacing: "-0.01em",
+              wordBreak: "break-word",
             },
             error: {
               iconTheme: {
@@ -75,9 +78,9 @@ export default function App() {
                 secondary: "#181424",
               },
               style: {
-                border: "1px solid rgba(244, 63, 94, 0.28)",
-                background: "rgba(24, 14, 26, 0.96)",
-                boxShadow: "0 20px 45px -8px rgba(244, 63, 94, 0.25), 0 0 0 1px rgba(244, 63, 94, 0.15)",
+                border: "1px solid rgba(244, 63, 94, 0.35)",
+                background: "rgba(28, 14, 28, 0.98)",
+                boxShadow: "0 20px 45px -8px rgba(244, 63, 94, 0.3), 0 0 0 1px rgba(244, 63, 94, 0.15)",
               },
             },
             success: {
@@ -86,9 +89,9 @@ export default function App() {
                 secondary: "#0d1a16",
               },
               style: {
-                border: "1px solid rgba(16, 185, 129, 0.28)",
-                background: "rgba(13, 26, 22, 0.96)",
-                boxShadow: "0 20px 45px -8px rgba(16, 185, 129, 0.2), 0 0 0 1px rgba(16, 185, 129, 0.15)",
+                border: "1px solid rgba(16, 185, 129, 0.35)",
+                background: "rgba(13, 28, 24, 0.98)",
+                boxShadow: "0 20px 45px -8px rgba(16, 185, 129, 0.25), 0 0 0 1px rgba(16, 185, 129, 0.15)",
               },
             },
             loading: {
