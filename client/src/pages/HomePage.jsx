@@ -3001,9 +3001,11 @@ export default function HomePage() {
                 />
               ) : (
                 <video
+                  key={previewMedia.src}
                   controls
                   autoPlay
                   playsInline
+                  preload="auto"
                   poster={getVideoPosterUrl(previewMedia.src, { width: 960 })}
                   onLoadedMetadata={(event) => {
                     const { videoWidth, videoHeight } = event.currentTarget;

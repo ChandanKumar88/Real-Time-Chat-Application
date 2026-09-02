@@ -1,7 +1,8 @@
 /**
  * Cloudinary & Media Optimization Utility
- * Adds automatic WebP/AVIF format negotiation, intelligent compression,
- * and responsive dimension scaling to eliminate media loading delays.
+ * - Automatically optimizes images with WebP/AVIF format and responsive compression.
+ * - Leaves video stream URLs clean for smooth native browser range-buffering without stutter/stalling.
+ * - Generates instant first-frame poster thumbnails for videos.
  */
 
 export function getOptimizedMediaUrl(url, options = {}) {
@@ -11,6 +12,19 @@ export function getOptimizedMediaUrl(url, options = {}) {
 
   // Base64 data URLs or local blob URLs don't need transformation
   if (trimmed.startsWith("data:") || trimmed.startsWith("blob:")) {
+    return trimmed;
+  }
+
+  // If this is a video URL, keep it clean so native video player streams smoothly via byte-range requests
+  const isVideoUrl =
+    trimmed.includes("/video/upload/") ||
+    /\.(mp4|webm|mov|mkv|avi|m4v)(\?.*)?$/i.test(trimmed);
+
+  if (isVideoUrl) {
+    // If it was previously injected with f_auto or q_auto, strip them to restore smooth streaming
+    if (trimmed.includes("/upload/f_auto") || trimmed.includes("/upload/q_auto")) {
+      return trimmed.replace(/\/upload\/(f_auto|q_auto)[^/]*\//, "/upload/");
+    }
     return trimmed;
   }
 
@@ -60,7 +74,13 @@ export function getVideoPosterUrl(videoUrl, options = {}) {
   }
 
   const { width = 480 } = options;
-  return trimmed
+  // Strip any existing transforms before injecting poster transform
+  let clean = trimmed;
+  if (clean.includes("/upload/f_auto") || clean.includes("/upload/q_auto")) {
+    clean = clean.replace(/\/upload\/(f_auto|q_auto)[^/]*\//, "/upload/");
+  }
+
+  return clean
     .replace("/video/upload/", `/video/upload/so_0,f_auto,q_auto:good,w_${width},c_limit/`)
     .replace(/\.[^/.]+$/, ".jpg");
 }

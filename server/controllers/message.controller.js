@@ -153,9 +153,6 @@ async function sendMessage(req, res) {
     const uploadedVideo = await cloudinary.uploader.upload(video, {
       folder: "chat-app/messages",
       resource_type: "video",
-      transformation: [
-        { quality: "auto:good", fetch_format: "auto" }
-      ]
     });
     videoUrl = uploadedVideo.secure_url;
   }
