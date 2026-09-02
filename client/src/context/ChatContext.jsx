@@ -15,6 +15,97 @@ import {
 
 const mediaBlobUrlCache = new Map();
 
+export async function uploadMediaToCloudinary(fileOrBlob, fileName = "video.mp4", isVideo = true) {
+  // 1. Primary: Server-side authenticated stream (supports up to 100MB videos with zero client size limits)
+  try {
+    const formData = new FormData();
+    formData.append("file", fileOrBlob, fileName);
+    formData.append("isVideo", String(isVideo));
+
+    const { data } = await api.post("/messages/upload-media", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+      timeout: 300000, // 5 minutes for large videos
+    });
+
+    if (data?.data?.url) {
+      return data.data.url;
+    }
+  } catch (serverErr) {
+    console.warn("Backend video upload fallback:", serverErr?.message);
+  }
+
+  // 2. Direct Cloudinary video upload fallback (supports up to 100MB with signature)
+  const { data: sigData } = await api.get("/messages/upload/signature");
+  const uploadConfig = sigData.data;
+
+  const endpoint = isVideo
+    ? `https://api.cloudinary.com/v1_1/${uploadConfig.cloudName}/video/upload`
+    : `https://api.cloudinary.com/v1_1/${uploadConfig.cloudName}/image/upload`;
+
+  const totalSize = fileOrBlob.size || 0;
+  const CHUNK_SIZE = 6 * 1024 * 1024; // 6MB chunks
+
+  if (totalSize <= 8 * 1024 * 1024) {
+    const formData = new FormData();
+    formData.append("file", fileOrBlob, fileName);
+    formData.append("api_key", uploadConfig.apiKey);
+    formData.append("timestamp", uploadConfig.timestamp);
+    formData.append("signature", uploadConfig.signature);
+    formData.append("folder", uploadConfig.folder);
+
+    const response = await fetch(endpoint, {
+      method: "POST",
+      body: formData,
+    });
+    const result = await response.json();
+    if (response.ok && result.secure_url) {
+      return result.secure_url;
+    }
+  }
+
+  // Chunked upload for files > 8MB
+  const uniqueUploadId = `chunk_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  const totalChunks = Math.ceil(totalSize / CHUNK_SIZE);
+  let finalSecureUrl = "";
+
+  for (let i = 0; i < totalChunks; i++) {
+    const start = i * CHUNK_SIZE;
+    const end = Math.min(start + CHUNK_SIZE, totalSize);
+    const chunkBlob = fileOrBlob.slice(start, end);
+
+    const formData = new FormData();
+    formData.append("file", chunkBlob, fileName);
+    formData.append("api_key", uploadConfig.apiKey);
+    formData.append("timestamp", uploadConfig.timestamp);
+    formData.append("signature", uploadConfig.signature);
+    formData.append("folder", uploadConfig.folder);
+
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "X-Unique-Upload-Id": uniqueUploadId,
+        "Content-Range": `bytes ${start}-${end - 1}/${totalSize}`,
+      },
+      body: formData,
+    });
+
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(result?.error?.message || `Chunk ${i + 1}/${totalChunks} upload failed`);
+    }
+
+    if (result.secure_url) {
+      finalSecureUrl = result.secure_url;
+    }
+  }
+
+  if (finalSecureUrl) {
+    return finalSecureUrl;
+  }
+
+  throw new Error("Video upload failed");
+}
+
 export async function uploadEncryptedBlobToCloudinary(blob, fileName = "encrypted.bin", isVideo = false) {
   const isVideoFile =
     Boolean(isVideo) ||
@@ -24,7 +115,7 @@ export async function uploadEncryptedBlobToCloudinary(blob, fileName = "encrypte
     ? (fileName?.endsWith(".mp4") ? fileName : `${(fileName || "video").replace(/\.[^/.]+$/, "")}.mp4`)
     : (fileName?.endsWith(".jpg") || fileName?.endsWith(".png") ? fileName : `${(fileName || "image").replace(/\.[^/.]+$/, "")}.jpg`);
 
-  // 1. Primary: Upload via server-side authenticated Cloudinary stream (supports up to 100MB videos with zero client size limits)
+  // 1. Primary: Upload via server-side authenticated Cloudinary stream
   try {
     const formData = new FormData();
     formData.append("file", blob, actualFileName);
@@ -32,7 +123,7 @@ export async function uploadEncryptedBlobToCloudinary(blob, fileName = "encrypte
 
     const { data } = await api.post("/messages/upload-media", formData, {
       headers: { "Content-Type": "multipart/form-data" },
-      timeout: 180000, // 3 minutes timeout for large files
+      timeout: 180000,
     });
 
     if (data?.data?.url) {
@@ -63,8 +154,8 @@ export async function uploadEncryptedBlobToCloudinary(blob, fileName = "encrypte
       ];
 
   const totalSize = blob?.size || 0;
-  const SINGLE_UPLOAD_MAX = 8 * 1024 * 1024; // 8MB threshold (below 10MB Cloudinary free limit)
-  const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunks for 100% reliable chunked delivery
+  const SINGLE_UPLOAD_MAX = 8 * 1024 * 1024; // 8MB threshold
+  const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunks
 
   let lastErrorMessage = "";
   for (const endpoint of endpoints) {
@@ -157,6 +248,7 @@ export function dataUriToBlob(dataUri) {
 
 async function resolveDecryptedMediaUrl(mediaInfo) {
   if (!mediaInfo || !mediaInfo.url) return "";
+  if (!mediaInfo.key || !mediaInfo.iv) return mediaInfo.url;
   if (mediaBlobUrlCache.has(mediaInfo.url)) {
     return mediaBlobUrlCache.get(mediaInfo.url);
   }
@@ -177,7 +269,7 @@ async function resolveDecryptedMediaUrl(mediaInfo) {
     return blobUrl;
   } catch (error) {
     console.error("Failed to decrypt media blob:", error);
-    return "";
+    return mediaInfo.url || "";
   }
 }
 
@@ -299,14 +391,22 @@ export function ChatProvider({ children }) {
         let video = message.video || "";
         let isMediaE2ee = false;
 
-        if (mediaInfo && mediaInfo.url && mediaInfo.key && mediaInfo.iv) {
-          isMediaE2ee = true;
-          const decryptedBlobUrl = await resolveDecryptedMediaUrl(mediaInfo);
+        if (mediaInfo && mediaInfo.url) {
           const isVideo = mediaInfo.type === "video" || mediaInfo.mimeType?.startsWith("video/");
-          if (isVideo) {
-            video = decryptedBlobUrl || message.video || "";
+          if (mediaInfo.key && mediaInfo.iv) {
+            isMediaE2ee = true;
+            const decryptedBlobUrl = await resolveDecryptedMediaUrl(mediaInfo);
+            if (isVideo) {
+              video = decryptedBlobUrl || message.video || mediaInfo.url;
+            } else {
+              image = decryptedBlobUrl || message.image || mediaInfo.url;
+            }
           } else {
-            image = decryptedBlobUrl || message.image || "";
+            if (isVideo) {
+              video = mediaInfo.url || message.video || "";
+            } else {
+              image = mediaInfo.url || message.image || "";
+            }
           }
         }
 
@@ -944,24 +1044,44 @@ export function ChatProvider({ children }) {
           Boolean(rawMediaInput.type?.startsWith("video/")) ||
           /\.(mp4|mov|webm|mkv|avi|m4v|3gp|flv|wmv|ts)$/i.test(rawMediaInput.name || "");
 
-        const { encryptedBlob, mediaKeyBase64, ivBase64, mimeType, fileName, size } = await encryptMediaFile(rawMediaInput);
-        const cloudUrl = await uploadEncryptedBlobToCloudinary(
-          encryptedBlob,
-          fileName || (isVideoDetected ? "video.mp4" : "image.jpg"),
-          isVideoDetected
-        );
-        if (localPreviewUrl) {
-          mediaBlobUrlCache.set(cloudUrl, localPreviewUrl);
+        if (isVideoDetected) {
+          // Upload real video file to Cloudinary /video/upload (supports up to 100MB videos)
+          const cloudUrl = await uploadMediaToCloudinary(
+            rawMediaInput,
+            rawMediaInput.name || "video.mp4",
+            true
+          );
+          if (localPreviewUrl) {
+            mediaBlobUrlCache.set(cloudUrl, localPreviewUrl);
+          }
+          mediaMetadata = {
+            url: cloudUrl,
+            type: "video",
+            fileName: rawMediaInput.name || "video.mp4",
+            size: rawMediaInput.size || 0,
+            mimeType: rawMediaInput.type || "video/mp4",
+          };
+        } else {
+          // Images (<2MB) are E2EE encrypted
+          const { encryptedBlob, mediaKeyBase64, ivBase64, mimeType, fileName, size } = await encryptMediaFile(rawMediaInput);
+          const cloudUrl = await uploadEncryptedBlobToCloudinary(
+            encryptedBlob,
+            fileName || "image.jpg",
+            false
+          );
+          if (localPreviewUrl) {
+            mediaBlobUrlCache.set(cloudUrl, localPreviewUrl);
+          }
+          mediaMetadata = {
+            url: cloudUrl,
+            key: mediaKeyBase64,
+            iv: ivBase64,
+            type: "image",
+            mimeType,
+            fileName,
+            size,
+          };
         }
-        mediaMetadata = {
-          url: cloudUrl,
-          key: mediaKeyBase64,
-          iv: ivBase64,
-          type: isVideo ? "video" : "image",
-          mimeType,
-          fileName,
-          size,
-        };
       } else if (payload.forwardMedia || payload.rawMediaInfo) {
         mediaMetadata = payload.forwardMedia || payload.rawMediaInfo;
       }
