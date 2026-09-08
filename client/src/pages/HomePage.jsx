@@ -43,7 +43,10 @@ import { createCallMediaE2ee } from "../utils/callMediaE2ee";
 const CALL_EVENT_POLL_INTERVAL_MS = 900;
 
 function getCallIceServers() {
-  const iceServers = [{ urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] }];
+  const iceServers = [
+    { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302", "stun:stun2.l.google.com:19302", "stun:stun3.l.google.com:19302", "stun:stun4.l.google.com:19302"] },
+    { urls: ["stun:stun.cloudflare.com:3478", "stun:stun.services.mozilla.com:3478", "stun:stun.sipgate.net:3478", "stun:stun.ekiga.net"] },
+  ];
   const turnUrls = import.meta.env.VITE_TURN_URLS || import.meta.env.VITE_TURN_URL;
   const username = import.meta.env.VITE_TURN_USERNAME;
   const credential = import.meta.env.VITE_TURN_CREDENTIAL;
@@ -57,6 +60,14 @@ function getCallIceServers() {
   }
 
   return iceServers;
+}
+
+function tuneSdpForHighQualityVoice(sdp) {
+  if (!sdp) return sdp;
+  return sdp.replace(
+    /a=fmtp:111 ((?:(?!minptime).)*)/g,
+    "a=fmtp:111 $1;useinbandfec=1;usedtx=1;maxaveragebitrate=64000;stereo=0;sprop-stereo=0"
+  );
 }
 
 function formatCallDateTime(value, fallback = "") {
@@ -1271,19 +1282,21 @@ export default function HomePage() {
     const isVideo = callStateRef.current.type === "video" || hasVideoTracks;
     const isSpeakerOn = isVideo || callStateRef.current.speakerOn;
 
+    // Direct native HTML5 Audio element playback (hardware echo cancellation, noise suppression)
     remoteAudioRef.current.autoplay = true;
     remoteAudioRef.current.playsInline = true;
     remoteAudioRef.current.srcObject = remoteStream;
     remoteAudioRef.current.muted = false;
-    remoteAudioRef.current.volume = isSpeakerOn ? 1 : 0.75;
+    remoteAudioRef.current.volume = 1.0;
+    remoteAudioRef.current.play().catch(() => null);
+
     if (isSpeakerOn) {
       applySpeakerOutput(true).catch(() => null);
     }
-    remoteAudioRef.current.play().catch(() => null);
 
     if (remoteVideoRef.current) {
       remoteVideoRef.current.autoplay = true;
-      remoteVideoRef.current.muted = true;
+      remoteVideoRef.current.muted = true; // Video element must remain muted so audio plays only through remoteAudioRef
       remoteVideoRef.current.playsInline = true;
       remoteVideoRef.current.srcObject = remoteStream;
       remoteVideoRef.current.play().catch(() => null);
@@ -1313,101 +1326,67 @@ export default function HomePage() {
     const audioElement = remoteAudioRef.current;
     if (!audioElement) return false;
 
-    if (!enabled) {
-      stopSpeakerAudioOutput();
-      audioElement.muted = false;
-      audioElement.play().catch(() => null);
-    }
-
     audioElement.muted = false;
-    audioElement.volume = enabled ? 1 : 0.75;
+    audioElement.volume = 1.0;
 
-    if (typeof audioElement.setSinkId !== "function" || !navigator.mediaDevices?.enumerateDevices) {
-      return enabled ? startSpeakerAudioOutput() : false;
-    }
+    if (typeof audioElement.setSinkId === "function" && navigator.mediaDevices?.enumerateDevices) {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const audioOutputs = devices.filter((device) => device.kind === "audiooutput");
+        if (audioOutputs.length > 0) {
+          if (!speakerSinkIdRef.current) {
+            const speakerOutput =
+              audioOutputs.find((device) => /speaker/i.test(device.label)) ||
+              audioOutputs.find((device) => device.deviceId === "default") ||
+              audioOutputs[0];
+            speakerSinkIdRef.current = speakerOutput.deviceId;
+          }
 
-    try {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const audioOutputs = devices.filter((device) => device.kind === "audiooutput");
-      if (!audioOutputs.length) return false;
+          const normalOutput =
+            audioOutputs.find((device) => /communications/i.test(device.label)) ||
+            audioOutputs.find((device) => device.deviceId === "default") ||
+            audioOutputs[0];
 
-      if (!speakerSinkIdRef.current) {
-        const speakerOutput =
-          audioOutputs.find((device) => /speaker/i.test(device.label)) ||
-          audioOutputs.find((device) => device.deviceId === "default") ||
-          audioOutputs[0];
-        speakerSinkIdRef.current = speakerOutput.deviceId;
+          await audioElement.setSinkId(enabled ? speakerSinkIdRef.current : normalOutput.deviceId);
+          return true;
+        }
+      } catch {
+        // ignore setSinkId error
       }
-
-      const normalOutput =
-        audioOutputs.find((device) => /communications/i.test(device.label)) ||
-        audioOutputs.find((device) => device.deviceId === "default") ||
-        audioOutputs[0];
-
-      await audioElement.setSinkId(enabled ? speakerSinkIdRef.current : normalOutput.deviceId);
-      return true;
-    } catch {
-      return enabled ? startSpeakerAudioOutput() : false;
     }
+    return false;
   }
 
   function stopSpeakerAudioOutput() {
-    speakerSourceRef.current?.disconnect();
-    speakerGainRef.current?.disconnect();
+    speakerSourceRef.current?.disconnect?.();
+    speakerGainRef.current?.disconnect?.();
     speakerAudioContextRef.current?.close?.().catch(() => null);
     speakerSourceRef.current = null;
     speakerGainRef.current = null;
     speakerAudioContextRef.current = null;
   }
 
-  async function startSpeakerAudioOutput() {
-    if (!remoteStreamRef.current) return false;
-
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextClass) return false;
-
-    try {
-      stopSpeakerAudioOutput();
-      const audioContext = new AudioContextClass();
-      const source = audioContext.createMediaStreamSource(remoteStreamRef.current);
-      const gain = audioContext.createGain();
-      gain.gain.value = 1.35;
-      source.connect(gain);
-      gain.connect(audioContext.destination);
-
-      if (audioContext.state === "suspended") {
-        await audioContext.resume();
-      }
-
-      if (remoteAudioRef.current) {
-        remoteAudioRef.current.muted = true;
-      }
-
-      speakerAudioContextRef.current = audioContext;
-      speakerSourceRef.current = source;
-      speakerGainRef.current = gain;
-      return true;
-    } catch {
-      stopSpeakerAudioOutput();
-      if (remoteAudioRef.current) {
-        remoteAudioRef.current.muted = false;
-      }
-      return false;
-    }
-  }
-
   async function addLocalMediaTracks(peerConnection, callType = "audio") {
     if (localStreamRef.current) {
       if (callType === "video" && localStreamRef.current.getVideoTracks().length === 0) {
-        const cameraStream = await navigator.mediaDevices.getUserMedia({
-          audio: false,
-          video: {
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-            facingMode: "user",
-          },
-        });
-        cameraStream.getVideoTracks().forEach((track) => localStreamRef.current.addTrack(track));
+        try {
+          const cameraStream = await navigator.mediaDevices.getUserMedia({
+            audio: false,
+            video: {
+              width: { ideal: 1280, max: 1920 },
+              height: { ideal: 720, max: 1080 },
+              facingMode: "user",
+              frameRate: { ideal: 30, max: 30 },
+            },
+          });
+          cameraStream.getVideoTracks().forEach((track) => localStreamRef.current.addTrack(track));
+        } catch {
+          const cameraStream = await navigator.mediaDevices.getUserMedia({
+            audio: false,
+            video: { facingMode: "user" },
+          });
+          cameraStream.getVideoTracks().forEach((track) => localStreamRef.current.addTrack(track));
+        }
       }
 
       localStreamRef.current.getAudioTracks().forEach((track) => {
@@ -1430,21 +1409,35 @@ export default function HomePage() {
       return;
     }
 
-    const localStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
-      video:
-        callType === "video"
-          ? {
-              width: { ideal: 1280 },
-              height: { ideal: 720 },
-              facingMode: "user",
-            }
-          : false,
-    });
+    let localStream = null;
+    const audioConstraints = {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    };
+    const videoConstraints =
+      callType === "video"
+        ? {
+            width: { ideal: 1280, max: 1920 },
+            height: { ideal: 720, max: 1080 },
+            facingMode: "user",
+            frameRate: { ideal: 30, max: 30 },
+          }
+        : false;
+
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({
+        audio: audioConstraints,
+        video: videoConstraints,
+      });
+    } catch (err) {
+      console.warn("Retrying getUserMedia with fallback media constraints:", err);
+      localStream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: callType === "video" ? { facingMode: "user" } : false,
+      });
+    }
+
     localStreamRef.current = localStream;
     attachLocalVideoStream(localStream);
 
@@ -1550,6 +1543,12 @@ export default function HomePage() {
       return;
     }
 
+    // Unlock audio playback within user gesture
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.muted = false;
+      remoteAudioRef.current.play().catch(() => null);
+    }
+
     try {
       callPeerIdRef.current = selectedUser._id;
       callIdRef.current = createLocalCallId();
@@ -1570,10 +1569,21 @@ export default function HomePage() {
 
       const peerConnection = await createPeerConnection(selectedUser._id);
       await addLocalMediaTracks(peerConnection, callType);
-      const offer = await peerConnection.createOffer();
-      await peerConnection.setLocalDescription(offer);
+      const offer = await peerConnection.createOffer({
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: callType === "video",
+      });
+      const tunedOffer = new RTCSessionDescription({
+        type: offer.type,
+        sdp: tuneSdpForHighQualityVoice(offer.sdp),
+      });
+      await peerConnection.setLocalDescription(tunedOffer);
 
-      await sendCallSignal("invite", selectedUser._id, { caller: getCallerSnapshot(), callType, offer: peerConnection.localDescription });
+      await sendCallSignal("invite", selectedUser._id, {
+        caller: getCallerSnapshot(),
+        callType,
+        offer: peerConnection.localDescription,
+      });
       await flushLocalIceCandidates(selectedUser._id);
     } catch (error) {
       resetCall();
@@ -1594,6 +1604,12 @@ export default function HomePage() {
     const offer = pendingOfferRef.current;
     if (!peerId || !offer) return;
 
+    // Immediately unlock mobile audio element within user tap gesture
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.muted = false;
+      remoteAudioRef.current.play().catch(() => null);
+    }
+
     try {
       setCallState((prev) => ({ ...prev, status: "connecting" }));
       const peerConnection = await createPeerConnection(peerId);
@@ -1601,8 +1617,15 @@ export default function HomePage() {
       await addLocalMediaTracks(peerConnection, callStateRef.current.type || "audio");
       await flushQueuedIceCandidates();
 
-      const answer = await peerConnection.createAnswer();
-      await peerConnection.setLocalDescription(answer);
+      const answer = await peerConnection.createAnswer({
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: (callStateRef.current.type || "audio") === "video",
+      });
+      const tunedAnswer = new RTCSessionDescription({
+        type: answer.type,
+        sdp: tuneSdpForHighQualityVoice(answer.sdp),
+      });
+      await peerConnection.setLocalDescription(tunedAnswer);
       await sendCallSignal("accept", peerId, { answer: peerConnection.localDescription });
       await flushLocalIceCandidates(peerId);
 
@@ -1916,7 +1939,12 @@ export default function HomePage() {
         />
       )}
 
-      <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
+      <audio
+        ref={remoteAudioRef}
+        autoPlay
+        playsInline
+        style={{ position: "fixed", width: "1px", height: "1px", opacity: 0.01, pointerEvents: "none", zIndex: -1 }}
+      />
 
       {shouldShowFullCallScreen && (
         <div
