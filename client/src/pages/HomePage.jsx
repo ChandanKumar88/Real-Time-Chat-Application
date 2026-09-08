@@ -64,10 +64,21 @@ function getCallIceServers() {
 
 function tuneSdpForHighQualityVoice(sdp) {
   if (!sdp) return sdp;
-  return sdp.replace(
-    /a=fmtp:111 ((?:(?!minptime).)*)/g,
-    "a=fmtp:111 $1;useinbandfec=1;usedtx=1;maxaveragebitrate=64000;stereo=0;sprop-stereo=0"
-  );
+  let tuned = sdp;
+  if (tuned.includes("a=fmtp:111")) {
+    tuned = tuned.replace(
+      /a=fmtp:111 ([^\r\n]+)/g,
+      (match, params) => {
+        const clean = params
+          .split(";")
+          .map((p) => p.trim())
+          .filter((p) => Boolean(p) && !p.startsWith("useinbandfec") && !p.startsWith("usedtx") && !p.startsWith("stereo") && !p.startsWith("sprop-stereo") && !p.startsWith("minptime") && !p.startsWith("maxaveragebitrate"))
+          .join(";");
+        return `a=fmtp:111 ${clean ? clean + ";" : ""}useinbandfec=1;usedtx=1;stereo=0;sprop-stereo=0;minptime=10;maxaveragebitrate=64000`;
+      }
+    );
+  }
+  return tuned;
 }
 
 function formatCallDateTime(value, fallback = "") {
@@ -1414,6 +1425,12 @@ export default function HomePage() {
       echoCancellation: true,
       noiseSuppression: true,
       autoGainControl: true,
+      googEchoCancellation: true,
+      googAutoGainControl: true,
+      googNoiseSuppression: true,
+      googHighpassFilter: true,
+      googAudioMirroring: false,
+      channelCount: 1,
     };
     const videoConstraints =
       callType === "video"
@@ -1955,6 +1972,7 @@ export default function HomePage() {
             <video
               ref={remoteVideoRef}
               autoPlay
+              muted
               playsInline
               className="absolute inset-0 h-full w-full bg-[#111b21] object-cover"
             />
