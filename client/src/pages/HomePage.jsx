@@ -665,9 +665,9 @@ export default function HomePage() {
     try {
       const compressed = await processImageFile(file, {
         cropSquare: true,
-        maxWidth: 512,
-        maxHeight: 512,
-        quality: 0.75,
+        maxWidth: 1280,
+        maxHeight: 1280,
+        quality: 0.92,
       });
       setMobileProfileForm((prev) => ({ ...prev, profilePic: compressed, preview: compressed }));
     } catch {

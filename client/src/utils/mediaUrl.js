@@ -37,7 +37,7 @@ export function getOptimizedMediaUrl(url, options = {}) {
     width,
     height,
     crop = "limit",
-    quality = "auto:good",
+    quality = "auto:best",
     format = "auto",
     isProfile = false,
   } = options;
@@ -46,11 +46,27 @@ export function getOptimizedMediaUrl(url, options = {}) {
   if (uploadIndex === -1) return trimmed;
 
   const prefix = trimmed.substring(0, uploadIndex + 8);
-  const rest = trimmed.substring(uploadIndex + 8);
+  const afterUpload = trimmed.substring(uploadIndex + 8);
+  const segments = afterUpload.split("/");
 
-  // If already optimized, return as is
-  if (rest.startsWith("f_auto") || rest.startsWith("q_auto")) {
-    return trimmed;
+  let rest = afterUpload;
+  if (segments.length > 1) {
+    const lastSegment = segments[segments.length - 1];
+    const middleSegments = segments.slice(0, -1);
+    const keptSegments = [];
+
+    for (const seg of middleSegments) {
+      if (/^v\d+$/.test(seg)) {
+        keptSegments.push(seg);
+        continue;
+      }
+      const isTransform = /(?:^|,)(?:[a-z]{1,3}_|s--)/.test(seg);
+      if (!isTransform) {
+        keptSegments.push(seg);
+      }
+    }
+    keptSegments.push(lastSegment);
+    rest = keptSegments.join("/");
   }
 
   const transforms = [`f_${format}`, `q_${quality}`];

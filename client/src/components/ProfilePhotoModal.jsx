@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { FiX } from "react-icons/fi";
 import ProfileAvatar from "./ProfileAvatar";
+import { getOptimizedMediaUrl } from "../utils/mediaUrl";
 
 export default function ProfilePhotoModal({
   user,
@@ -22,6 +23,9 @@ export default function ProfilePhotoModal({
 
   const displayName = user.fullName || user.name || "User";
   const avatarSrc = user.profilePic || "";
+  const highResAvatarUrl = avatarSrc
+    ? getOptimizedMediaUrl(avatarSrc, { width: 1200, quality: "auto:best" })
+    : "";
 
   return (
     <div
@@ -62,11 +66,13 @@ export default function ProfilePhotoModal({
         className="relative max-h-[75vh] max-w-[88vw] sm:max-h-[500px] sm:max-w-[500px] aspect-square w-full overflow-hidden rounded-2xl border border-white/15 bg-black/60 shadow-[0_25px_65px_rgba(0,0,0,0.9)] transition-all animate-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
-        {avatarSrc ? (
+        {highResAvatarUrl ? (
           <img
-            src={avatarSrc}
+            src={highResAvatarUrl}
             alt={displayName}
             className="h-full w-full object-cover select-none"
+            loading="eager"
+            decoding="async"
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-indigo-500 via-violet-600 to-fuchsia-600 text-7xl font-bold text-white select-none">

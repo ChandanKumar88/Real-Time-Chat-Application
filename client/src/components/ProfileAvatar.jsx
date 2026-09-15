@@ -5,7 +5,7 @@ export default function ProfileAvatar({ src, name = "User", className = "" }) {
   const [hasError, setHasError] = useState(false);
   const normalizedSrc = typeof src === "string" ? src.trim() : "";
   const optimizedSrc = useMemo(() => {
-    return getOptimizedMediaUrl(normalizedSrc, { width: 160, isProfile: true });
+    return getOptimizedMediaUrl(normalizedSrc, { width: 240, isProfile: true });
   }, [normalizedSrc]);
   const showImage = optimizedSrc && !hasError;
 

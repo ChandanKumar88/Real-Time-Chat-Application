@@ -558,9 +558,9 @@ export default function AuthPage({ mode = "login" }) {
                       try {
                         const compressed = await processImageFile(file, {
                           cropSquare: true,
-                          maxWidth: 512,
-                          maxHeight: 512,
-                          quality: 0.75,
+                          maxWidth: 1280,
+                          maxHeight: 1280,
+                          quality: 0.92,
                         });
                         setForm((prev) => ({ ...prev, profilePic: compressed }));
                       } catch {
