@@ -28,6 +28,7 @@ import {
   FiVolume2,
   FiX,
 } from "react-icons/fi";
+import { LuSwitchCamera } from "react-icons/lu";
 import { useAuth } from "../context/AuthContext";
 import { useChat } from "../context/ChatContext";
 import { api, isManualLogoutInProgress } from "../services/api";
@@ -204,6 +205,9 @@ export default function HomePage() {
   const [callHistory, setCallHistory] = useState([]);
   const [isCallHistoryLoaded, setIsCallHistoryLoaded] = useState(false);
   const [callHasVideo, setCallHasVideo] = useState(false);
+  const [cameraFacingMode, setCameraFacingMode] = useState("user");
+  const [isSwitchingCamera, setIsSwitchingCamera] = useState(false);
+  const cameraFacingModeRef = useRef("user");
   const [, setCallClockTick] = useState(0);
   const pinchStateRef = useRef(null);
   const remoteAudioRef = useRef(null);
@@ -1225,6 +1229,9 @@ export default function HomePage() {
     stopCallMedia();
     setIsCallMinimized(false);
     setCallHasVideo(false);
+    cameraFacingModeRef.current = "user";
+    setCameraFacingMode("user");
+    setIsSwitchingCamera(false);
     setCallState({ status: "idle", direction: "", peer: null, muted: false, speakerOn: false, cameraOff: false, type: "audio", startedAt: null });
   }
 
@@ -1379,6 +1386,7 @@ export default function HomePage() {
   }
 
   async function addLocalMediaTracks(peerConnection, callType = "audio") {
+    const currentFacingMode = cameraFacingModeRef.current || "user";
     if (localStreamRef.current) {
       if (callType === "video" && localStreamRef.current.getVideoTracks().length === 0) {
         try {
@@ -1387,7 +1395,7 @@ export default function HomePage() {
             video: {
               width: { ideal: 1280, max: 1920 },
               height: { ideal: 720, max: 1080 },
-              facingMode: "user",
+              facingMode: currentFacingMode,
               frameRate: { ideal: 30, max: 30 },
             },
           });
@@ -1395,7 +1403,7 @@ export default function HomePage() {
         } catch {
           const cameraStream = await navigator.mediaDevices.getUserMedia({
             audio: false,
-            video: { facingMode: "user" },
+            video: { facingMode: currentFacingMode },
           });
           cameraStream.getVideoTracks().forEach((track) => localStreamRef.current.addTrack(track));
         }
@@ -1438,7 +1446,7 @@ export default function HomePage() {
         ? {
             width: { ideal: 1280, max: 1920 },
             height: { ideal: 720, max: 1080 },
-            facingMode: "user",
+            facingMode: currentFacingMode,
             frameRate: { ideal: 30, max: 30 },
           }
         : false;
@@ -1452,7 +1460,7 @@ export default function HomePage() {
       console.warn("Retrying getUserMedia with fallback media constraints:", err);
       localStream = await navigator.mediaDevices.getUserMedia({
         audio: true,
-        video: callType === "video" ? { facingMode: "user" } : false,
+        video: callType === "video" ? { facingMode: currentFacingMode } : false,
       });
     }
 
@@ -1684,7 +1692,7 @@ export default function HomePage() {
   }
 
   function toggleCallCamera() {
-    if (callStateRef.current.type !== "video") {
+    if (callStateRef.current.type !== "video" && !callHasVideo) {
       toast.error("Camera sirf video call mein use hota hai.");
       return;
     }
@@ -1694,6 +1702,93 @@ export default function HomePage() {
     });
     if (!nextCameraOff) attachLocalVideoStream(localStreamRef.current);
     setCallState((prev) => ({ ...prev, cameraOff: nextCameraOff }));
+  }
+
+  async function switchCamera() {
+    if (callStateRef.current.type !== "video" && !callHasVideo) {
+      return;
+    }
+    if (callStateRef.current.cameraOff) {
+      toast.error("Camera on karo switch karne se pehle.");
+      return;
+    }
+    if (isSwitchingCamera) return;
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      toast.error("Camera switching support nahi karta aapka browser.");
+      return;
+    }
+
+    setIsSwitchingCamera(true);
+    const nextFacingMode = cameraFacingModeRef.current === "user" ? "environment" : "user";
+
+    try {
+      let newStream = null;
+      try {
+        newStream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: {
+            facingMode: { exact: nextFacingMode },
+            width: { ideal: 1280, max: 1920 },
+            height: { ideal: 720, max: 1080 },
+            frameRate: { ideal: 30, max: 30 },
+          },
+        });
+      } catch {
+        newStream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: {
+            facingMode: nextFacingMode,
+          },
+        });
+      }
+
+      const newVideoTrack = newStream?.getVideoTracks?.()?.[0];
+      if (!newVideoTrack) {
+        throw new Error("No video track found for camera");
+      }
+
+      newVideoTrack.enabled = !callStateRef.current.cameraOff;
+
+      // Stop old video tracks
+      const currentVideoTracks = localStreamRef.current?.getVideoTracks() || [];
+      currentVideoTracks.forEach((track) => {
+        track.stop();
+        localStreamRef.current?.removeTrack(track);
+      });
+
+      // Add new video track to local stream
+      if (localStreamRef.current) {
+        localStreamRef.current.addTrack(newVideoTrack);
+      } else {
+        localStreamRef.current = newStream;
+      }
+
+      // Update local video element
+      attachLocalVideoStream(localStreamRef.current);
+
+      // Replace track on WebRTC peer connection video sender
+      if (peerConnectionRef.current) {
+        const senders = peerConnectionRef.current.getSenders();
+        const videoSender = senders.find(
+          (s) => (s.track && s.track.kind === "video") || s.kind === "video"
+        );
+        if (videoSender && typeof videoSender.replaceTrack === "function") {
+          await videoSender.replaceTrack(newVideoTrack);
+        }
+      }
+
+      cameraFacingModeRef.current = nextFacingMode;
+      setCameraFacingMode(nextFacingMode);
+      toast.success(nextFacingMode === "environment" ? "Back camera on" : "Front camera on", {
+        id: "camera-switch-toast",
+      });
+    } catch (err) {
+      console.warn("Camera switch error:", err);
+      toast.error("Camera switch nahi ho paya.", { id: "camera-switch-toast" });
+    } finally {
+      setIsSwitchingCamera(false);
+    }
   }
 
   async function toggleCallSpeaker() {
@@ -2074,26 +2169,56 @@ export default function HomePage() {
           />
           <div className="absolute inset-x-0 top-0 z-10 h-32 bg-gradient-to-b from-black/55 to-transparent" />
           {isVideoCall && ["calling", "connecting", "active"].includes(callState.status) && (
-            <div className="absolute right-4 top-24 z-30 h-36 w-28 overflow-hidden rounded-2xl border border-white/15 bg-black/50 shadow-2xl shadow-black/40 sm:right-8 sm:top-28 sm:h-44 sm:w-36">
+            <div
+              onClick={switchCamera}
+              className="group absolute right-4 top-24 z-30 h-36 w-28 overflow-hidden rounded-2xl border border-white/15 bg-black/50 shadow-2xl shadow-black/40 cursor-pointer sm:right-8 sm:top-28 sm:h-44 sm:w-36 transition active:scale-95"
+              title="Tap to flip camera"
+            >
               {callState.cameraOff ? (
                 <div className="grid h-full w-full place-items-center bg-[#182229] text-xs font-semibold text-white/70">
                   Camera off
                 </div>
               ) : (
-                <video ref={localVideoRef} autoPlay muted playsInline className="h-full w-full scale-x-[-1] object-cover" />
+                <>
+                  <video
+                    ref={localVideoRef}
+                    autoPlay
+                    muted
+                    playsInline
+                    className={`h-full w-full object-cover transition-transform duration-300 ${
+                      cameraFacingMode === "user" ? "scale-x-[-1]" : "scale-x-1"
+                    }`}
+                  />
+                  <div className="absolute bottom-1.5 right-1.5 grid h-7 w-7 place-items-center rounded-full bg-black/60 text-white/90 backdrop-blur-sm transition group-hover:bg-black/80 sm:hidden">
+                    <LuSwitchCamera className={`text-sm ${isSwitchingCamera ? "animate-spin" : ""}`} />
+                  </div>
+                </>
               )}
             </div>
           )}
           <div className="relative z-20 flex min-h-[100dvh] flex-col px-5 pb-5 pt-5 sm:px-8 sm:pb-7 sm:pt-7">
-            <div className="flex items-center">
+            <div className="flex items-center justify-between">
               <button
                 type="button"
                 onClick={() => setIsCallMinimized(true)}
-                className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-white/10 text-white shadow-xl shadow-black/20 backdrop-blur transition hover:bg-white/15 sm:h-12 sm:w-12"
+                className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-white/10 text-white shadow-xl shadow-black/20 backdrop-blur transition hover:bg-white/15 active:scale-95 sm:h-12 sm:w-12"
                 aria-label="Minimize call"
               >
                 <FiMinimize2 className="text-2xl sm:text-xl" />
               </button>
+
+              {isVideoCall && ["calling", "connecting", "active"].includes(callState.status) && (
+                <button
+                  type="button"
+                  onClick={switchCamera}
+                  disabled={isSwitchingCamera || callState.cameraOff}
+                  className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-white/10 text-white shadow-xl shadow-black/20 backdrop-blur transition hover:bg-white/15 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 sm:hidden"
+                  aria-label="Switch camera"
+                  title={cameraFacingMode === "user" ? "Switch to back camera" : "Switch to front camera"}
+                >
+                  <LuSwitchCamera className={`text-2xl transition-transform duration-300 ${isSwitchingCamera ? "animate-spin" : ""}`} />
+                </button>
+              )}
             </div>
 
             <div className="mt-2 text-center sm:mt-0">
