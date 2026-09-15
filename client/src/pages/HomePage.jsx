@@ -1352,14 +1352,20 @@ export default function HomePage() {
       localVideoRef.current.muted = true;
       localVideoRef.current.autoplay = true;
       localVideoRef.current.playsInline = true;
-      localVideoRef.current.srcObject = localStream;
+      if (localVideoRef.current.srcObject !== localStream) {
+        localVideoRef.current.srcObject = null;
+        localVideoRef.current.srcObject = localStream;
+      }
       localVideoRef.current.play().catch(() => null);
     }
     if (miniLocalVideoRef.current) {
       miniLocalVideoRef.current.muted = true;
       miniLocalVideoRef.current.autoplay = true;
       miniLocalVideoRef.current.playsInline = true;
-      miniLocalVideoRef.current.srcObject = localStream;
+      if (miniLocalVideoRef.current.srcObject !== localStream) {
+        miniLocalVideoRef.current.srcObject = null;
+        miniLocalVideoRef.current.srcObject = localStream;
+      }
       miniLocalVideoRef.current.play().catch(() => null);
     }
   }
@@ -1376,25 +1382,29 @@ export default function HomePage() {
     if (callState.status === "idle") return;
     if (remoteStreamRef.current) {
       if (remoteVideoRef.current && remoteVideoRef.current.srcObject !== remoteStreamRef.current) {
+        remoteVideoRef.current.srcObject = null;
         remoteVideoRef.current.srcObject = remoteStreamRef.current;
         remoteVideoRef.current.play().catch(() => null);
       }
       if (miniRemoteVideoRef.current && miniRemoteVideoRef.current.srcObject !== remoteStreamRef.current) {
+        miniRemoteVideoRef.current.srcObject = null;
         miniRemoteVideoRef.current.srcObject = remoteStreamRef.current;
         miniRemoteVideoRef.current.play().catch(() => null);
       }
     }
     if (localStreamRef.current) {
       if (localVideoRef.current && localVideoRef.current.srcObject !== localStreamRef.current) {
+        localVideoRef.current.srcObject = null;
         localVideoRef.current.srcObject = localStreamRef.current;
         localVideoRef.current.play().catch(() => null);
       }
       if (miniLocalVideoRef.current && miniLocalVideoRef.current.srcObject !== localStreamRef.current) {
+        miniLocalVideoRef.current.srcObject = null;
         miniLocalVideoRef.current.srcObject = localStreamRef.current;
         miniLocalVideoRef.current.play().catch(() => null);
       }
     }
-  }, [isCallMinimized, isVideoActive, callState.status, callState.cameraOff]);
+  }, [isCallMinimized, isVideoActive, callState.status, callState.cameraOff, cameraFacingMode]);
 
   useEffect(() => {
     if (isCallMinimized && !pipPosition) {
@@ -1871,9 +1881,8 @@ export default function HomePage() {
           audio: false,
           video: {
             facingMode: { exact: nextFacingMode },
-            width: { ideal: 1280, max: 1920 },
-            height: { ideal: 720, max: 1080 },
-            frameRate: { ideal: 30, max: 30 },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
           },
         });
       } catch {
@@ -1892,22 +1901,40 @@ export default function HomePage() {
 
       newVideoTrack.enabled = !callStateRef.current.cameraOff;
 
-      // Stop old video tracks
+      // Stop and remove old video tracks
       const currentVideoTracks = localStreamRef.current?.getVideoTracks() || [];
       currentVideoTracks.forEach((track) => {
-        track.stop();
-        localStreamRef.current?.removeTrack(track);
+        try {
+          track.stop();
+          localStreamRef.current?.removeTrack(track);
+        } catch {}
       });
 
-      // Add new video track to local stream
-      if (localStreamRef.current) {
-        localStreamRef.current.addTrack(newVideoTrack);
-      } else {
-        localStreamRef.current = newStream;
-      }
+      // Create brand-new MediaStream combining audio tracks + new video track
+      const audioTracks = localStreamRef.current?.getAudioTracks() || [];
+      const freshLocalStream = new MediaStream([...audioTracks, newVideoTrack]);
+      localStreamRef.current = freshLocalStream;
 
-      // Update local video element
-      attachLocalVideoStream(localStreamRef.current);
+      cameraFacingModeRef.current = nextFacingMode;
+      setCameraFacingMode(nextFacingMode);
+
+      // Rebind directly to video elements with fresh stream
+      if (localVideoRef.current) {
+        localVideoRef.current.muted = true;
+        localVideoRef.current.autoplay = true;
+        localVideoRef.current.playsInline = true;
+        localVideoRef.current.srcObject = null;
+        localVideoRef.current.srcObject = freshLocalStream;
+        localVideoRef.current.play().catch(() => null);
+      }
+      if (miniLocalVideoRef.current) {
+        miniLocalVideoRef.current.muted = true;
+        miniLocalVideoRef.current.autoplay = true;
+        miniLocalVideoRef.current.playsInline = true;
+        miniLocalVideoRef.current.srcObject = null;
+        miniLocalVideoRef.current.srcObject = freshLocalStream;
+        miniLocalVideoRef.current.play().catch(() => null);
+      }
 
       // Replace track on WebRTC peer connection video sender
       if (peerConnectionRef.current) {
@@ -1920,8 +1947,6 @@ export default function HomePage() {
         }
       }
 
-      cameraFacingModeRef.current = nextFacingMode;
-      setCameraFacingMode(nextFacingMode);
       toast.success(nextFacingMode === "environment" ? "Back camera on" : "Front camera on", {
         id: "camera-switch-toast",
       });
@@ -2312,9 +2337,13 @@ export default function HomePage() {
                           autoPlay
                           muted
                           playsInline
-                          className={`h-full w-full object-cover pointer-events-none transition-transform duration-300 ${
-                            cameraFacingMode === "user" ? "scale-x-[-1]" : "scale-x-1"
-                          }`}
+                          onLoadedMetadata={(e) => {
+                            e.currentTarget.play().catch(() => null);
+                          }}
+                          style={{
+                            transform: cameraFacingMode === "user" ? "scaleX(-1)" : "none",
+                          }}
+                          className="h-full w-full object-cover pointer-events-none"
                         />
                         <div className="absolute bottom-0.5 right-0.5 grid h-3.5 w-3.5 sm:h-4 sm:w-4 place-items-center rounded-full bg-black/70 text-white/90 sm:hidden">
                           <LuSwitchCamera className="text-[7px] sm:text-[8px]" />
@@ -2491,9 +2520,13 @@ export default function HomePage() {
                     autoPlay
                     muted
                     playsInline
-                    className={`h-full w-full object-cover transition-transform duration-300 ${
-                      cameraFacingMode === "user" ? "scale-x-[-1]" : "scale-x-1"
-                    }`}
+                    onLoadedMetadata={(e) => {
+                      e.currentTarget.play().catch(() => null);
+                    }}
+                    style={{
+                      transform: cameraFacingMode === "user" ? "scaleX(-1)" : "none",
+                    }}
+                    className="h-full w-full object-cover"
                   />
                   <div className="absolute bottom-1.5 right-1.5 grid h-7 w-7 place-items-center rounded-full bg-black/60 text-white/90 backdrop-blur-sm transition group-hover:bg-black/80 sm:hidden">
                     <LuSwitchCamera className={`text-sm ${isSwitchingCamera ? "animate-spin" : ""}`} />
