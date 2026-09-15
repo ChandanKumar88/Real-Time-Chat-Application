@@ -10,6 +10,7 @@ import {
   FiMessageCircle,
   FiMic,
   FiMicOff,
+  FiMaximize2,
   FiMinimize2,
   FiMinus,
   FiMoon,
@@ -1963,6 +1964,90 @@ export default function HomePage() {
         style={{ position: "fixed", width: "1px", height: "1px", opacity: 0.01, pointerEvents: "none", zIndex: -1 }}
       />
 
+      {isCallOpen && isCallMinimized && (
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => setIsCallMinimized(false)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              setIsCallMinimized(false);
+            }
+          }}
+          className="relative mb-2 w-full shrink-0 flex h-14 sm:h-16 items-center justify-between rounded-2xl border border-emerald-500/35 bg-[#0c1317]/95 px-3.5 text-left text-white shadow-xl backdrop-blur-xl transition-all active:scale-[0.99] cursor-pointer md:border-emerald-400/20"
+        >
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="relative shrink-0">
+              {callState.peer?.profilePic ? (
+                <img
+                  src={callState.peer.profilePic}
+                  alt={callState.peer?.fullName || "Caller"}
+                  className="h-11 w-11 rounded-full border border-emerald-400/40 object-cover"
+                />
+              ) : (
+                <span className="grid h-11 w-11 place-items-center rounded-full bg-emerald-500/20 text-emerald-400 font-semibold text-lg border border-emerald-400/30">
+                  {getCallInitials(callState.peer?.fullName)}
+                </span>
+              )}
+              <span className="absolute -bottom-0.5 -right-0.5 grid h-4 w-4 place-items-center rounded-full bg-emerald-500 text-[10px] text-black shadow-sm">
+                {callState.type === "video" ? (
+                  callState.cameraOff ? <FiVideoOff className="text-[9px] text-white" /> : <FiVideo className="text-[9px] text-white" />
+                ) : callState.muted ? (
+                  <FiMicOff className="text-[9px] text-white" />
+                ) : (
+                  <FiPhone className="text-[9px] text-white" />
+                )}
+              </span>
+            </div>
+
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="block truncate text-sm sm:text-base font-semibold text-emerald-400">
+                  {callState.peer?.fullName || "QuickChat user"}
+                </span>
+                {callState.status === "active" && (
+                  <span className="shrink-0 rounded-md bg-emerald-500/20 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-emerald-300">
+                    {formatCallDuration(callState.startedAt)}
+                  </span>
+                )}
+              </div>
+              <span className="block truncate text-xs text-white/70">
+                {callState.status === "active" ? "Tap to return to call" : getCallStatusText()}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsCallMinimized(false);
+              }}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold text-white/90 backdrop-blur transition hover:bg-white/15 active:scale-95"
+              aria-label="Maximize call"
+              title="Maximize call"
+            >
+              <FiMaximize2 className="text-sm text-emerald-400" />
+              <span className="hidden sm:inline">Maximize</span>
+            </button>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                endAudioCall();
+              }}
+              className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-rose-500 text-white shadow-lg shadow-rose-950/40 transition hover:bg-rose-600 active:scale-95"
+              aria-label="End call"
+              title="End call"
+            >
+              <FiPhoneOff className="text-base" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {shouldShowFullCallScreen && (
         <div
           className="fixed inset-0 z-[70] flex min-h-[100dvh] flex-col overflow-hidden bg-[#111b21] text-white"
@@ -2395,64 +2480,6 @@ export default function HomePage() {
 
       <div className={`flex min-h-0 h-full flex-col lg:col-span-8 ${isDesktopRightPanelOpen ? "xl:col-span-6" : "xl:col-span-9"}`}>
         <div className={`${activeDesktopTab === "calls" ? "flex lg:hidden" : "flex"} min-h-0 h-full flex-col`}>
-        {isCallOpen && isCallMinimized && (
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => setIsCallMinimized(false)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                setIsCallMinimized(false);
-              }
-            }}
-            className="mb-2 flex h-16 shrink-0 items-center justify-between rounded-2xl border border-emerald-400/10 bg-[#0b1115] px-3 text-left text-white shadow-2xl"
-          >
-            <span className="flex min-w-0 items-center gap-3">
-              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white/10">
-                {callState.type === "video" ? (
-                  callState.cameraOff ? (
-                    <FiVideoOff className="text-xl text-white/85" />
-                  ) : (
-                    <FiVideo className="text-xl text-emerald-400" />
-                  )
-                ) : callState.muted ? (
-                  <FiMicOff className="text-xl text-white/85" />
-                ) : (
-                  <FiPhone className="text-xl text-emerald-400" />
-                )}
-              </span>
-              <span className="min-w-0">
-                <span className="block truncate text-base font-semibold text-emerald-400">
-                  {callState.peer?.fullName || "QuickChat user"}
-                  {callState.status === "active" ? ` - ${formatCallDuration(callState.startedAt)}` : ""}
-                </span>
-                <span className="block truncate text-sm text-white/60">
-                  {callState.status === "active" ? "Tap to return to call" : getCallStatusText()}
-                </span>
-              </span>
-            </span>
-            <span
-              role="button"
-              tabIndex={0}
-              onClick={(event) => {
-                event.stopPropagation();
-                endAudioCall();
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  endAudioCall();
-                }
-              }}
-              className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-rose-500 text-white shadow-lg shadow-rose-950/30"
-              aria-label="End call"
-            >
-              <FiPhoneOff />
-            </span>
-          </div>
-        )}
         <ChatContainer
           user={user}
           selectedUser={selectedUser}
