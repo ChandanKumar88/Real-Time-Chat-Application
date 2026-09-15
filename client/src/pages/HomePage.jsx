@@ -207,7 +207,12 @@ export default function HomePage() {
   const [callHasVideo, setCallHasVideo] = useState(false);
   const [cameraFacingMode, setCameraFacingMode] = useState("user");
   const [isSwitchingCamera, setIsSwitchingCamera] = useState(false);
+  const [pipPosition, setPipPosition] = useState(null);
   const cameraFacingModeRef = useRef("user");
+  const pipRef = useRef(null);
+  const isDraggingRef = useRef(false);
+  const dragStartRef = useRef({ pointerX: 0, pointerY: 0, pipX: 0, pipY: 0 });
+  const hasDraggedRef = useRef(false);
   const [, setCallClockTick] = useState(0);
   const pinchStateRef = useRef(null);
   const remoteAudioRef = useRef(null);
@@ -1240,6 +1245,7 @@ export default function HomePage() {
     cameraFacingModeRef.current = "user";
     setCameraFacingMode("user");
     setIsSwitchingCamera(false);
+    setPipPosition(null);
     setCallState({ status: "idle", direction: "", peer: null, muted: false, speakerOn: false, cameraOff: false, type: "audio", startedAt: null });
   }
 
@@ -1389,6 +1395,93 @@ export default function HomePage() {
       }
     }
   }, [isCallMinimized, isVideoActive, callState.status, callState.cameraOff]);
+
+  useEffect(() => {
+    if (isCallMinimized && !pipPosition) {
+      const isMobile = window.innerWidth < 640;
+      const width = isMobile ? Math.min(220, window.innerWidth * 0.6) : window.innerWidth < 1024 ? 280 : 350;
+      const height = isMobile ? 180 : window.innerWidth < 1024 ? 240 : 300;
+      const margin = 16;
+      const initialX = Math.max(margin, window.innerWidth - width - margin);
+      const initialY = isMobile ? 70 : Math.max(margin, window.innerHeight - height - margin);
+      setPipPosition({ x: initialX, y: initialY });
+    }
+  }, [isCallMinimized, pipPosition]);
+
+  useEffect(() => {
+    function handleResize() {
+      if (!pipPosition || !pipRef.current) return;
+      const rect = pipRef.current.getBoundingClientRect();
+      const clampedX = Math.max(8, Math.min(window.innerWidth - rect.width - 8, pipPosition.x));
+      const clampedY = Math.max(8, Math.min(window.innerHeight - rect.height - 8, pipPosition.y));
+      if (clampedX !== pipPosition.x || clampedY !== pipPosition.y) {
+        setPipPosition({ x: clampedX, y: clampedY });
+      }
+    }
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [pipPosition]);
+
+  function handlePipPointerDown(e) {
+    if (e.target.closest("button") || e.target.closest("input")) {
+      return;
+    }
+
+    const pipEl = pipRef.current;
+    if (!pipEl) return;
+
+    const rect = pipEl.getBoundingClientRect();
+    isDraggingRef.current = true;
+    hasDraggedRef.current = false;
+    dragStartRef.current = {
+      pointerX: e.clientX,
+      pointerY: e.clientY,
+      pipX: rect.left,
+      pipY: rect.top,
+    };
+
+    try {
+      pipEl.setPointerCapture(e.pointerId);
+    } catch {}
+  }
+
+  function handlePipPointerMove(e) {
+    if (!isDraggingRef.current || !pipRef.current) return;
+
+    const deltaX = e.clientX - dragStartRef.current.pointerX;
+    const deltaY = e.clientY - dragStartRef.current.pointerY;
+
+    if (Math.abs(deltaX) > 4 || Math.abs(deltaY) > 4) {
+      hasDraggedRef.current = true;
+    }
+
+    const rect = pipRef.current.getBoundingClientRect();
+    const nextX = Math.max(8, Math.min(window.innerWidth - rect.width - 8, dragStartRef.current.pipX + deltaX));
+    const nextY = Math.max(8, Math.min(window.innerHeight - rect.height - 8, dragStartRef.current.pipY + deltaY));
+
+    setPipPosition({ x: nextX, y: nextY });
+  }
+
+  function handlePipPointerUp(e) {
+    if (!isDraggingRef.current) return;
+    isDraggingRef.current = false;
+
+    if (pipRef.current) {
+      try {
+        pipRef.current.releasePointerCapture(e.pointerId);
+      } catch {}
+    }
+  }
+
+  function handlePipClick(e) {
+    if (hasDraggedRef.current) {
+      hasDraggedRef.current = false;
+      return;
+    }
+    if (!e.target.closest("button")) {
+      setIsCallMinimized(false);
+    }
+  }
 
   async function applySpeakerOutput(enabled) {
     const audioElement = remoteAudioRef.current;
@@ -2110,19 +2203,35 @@ export default function HomePage() {
 
       {isCallOpen && isCallMinimized && (
         <div
-          className="fixed z-[60] bottom-4 right-3 sm:bottom-6 sm:right-6 w-[290px] sm:w-[350px] md:w-[380px] overflow-hidden rounded-3xl border border-white/20 bg-[#111b21] shadow-[0_20px_60px_rgba(0,0,0,0.9)] backdrop-blur-2xl transition-all duration-300 animate-in zoom-in-95 select-none"
-          onPointerDown={retryCallMediaPlayback}
+          ref={pipRef}
+          onPointerDown={handlePipPointerDown}
+          onPointerMove={handlePipPointerMove}
+          onPointerUp={handlePipPointerUp}
+          onPointerCancel={handlePipPointerUp}
+          onClick={handlePipClick}
+          className="fixed z-[60] w-[220px] sm:w-[280px] md:w-[350px] overflow-hidden rounded-3xl border border-white/20 bg-[#111b21] shadow-[0_20px_60px_rgba(0,0,0,0.9)] backdrop-blur-2xl transition-shadow select-none touch-none cursor-grab active:cursor-grabbing"
+          style={
+            pipPosition
+              ? {
+                  left: `${pipPosition.x}px`,
+                  top: `${pipPosition.y}px`,
+                }
+              : {
+                  right: "16px",
+                  bottom: "16px",
+                }
+          }
         >
-          {/* Header Bar (WhatsApp style) */}
-          <div className="flex h-11 items-center justify-between border-b border-white/10 bg-[#182229]/95 px-3.5 text-white">
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="grid h-6 w-6 place-items-center rounded-full bg-emerald-500/20 text-emerald-400">
-                {isVideoCall ? <FiVideo className="text-xs" /> : <FiPhone className="text-xs" />}
+          {/* Header Bar with drag grip hint (WhatsApp style) */}
+          <div className="flex h-9 sm:h-10 md:h-11 items-center justify-between border-b border-white/10 bg-[#182229]/95 px-2.5 sm:px-3.5 text-white">
+            <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 pointer-events-none">
+              <span className="grid h-5 w-5 sm:h-6 sm:w-6 place-items-center rounded-full bg-emerald-500/20 text-emerald-400 shrink-0">
+                {isVideoCall ? <FiVideo className="text-[10px] sm:text-xs" /> : <FiPhone className="text-[10px] sm:text-xs" />}
               </span>
-              <span className="truncate text-xs font-semibold text-white/90">
+              <span className="truncate text-[11px] sm:text-xs font-semibold text-white/90">
                 {callState.peer?.fullName || "QuickChat"}
               </span>
-              <span className="hidden sm:inline-flex items-center gap-1 text-[10px] text-white/50">
+              <span className="hidden md:inline-flex items-center gap-1 text-[10px] text-white/50 shrink-0">
                 <FiLock className="text-[9px]" /> Encrypted
               </span>
             </div>
@@ -2131,42 +2240,47 @@ export default function HomePage() {
               {isVideoCall && (
                 <button
                   type="button"
-                  onClick={switchCamera}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    switchCamera();
+                  }}
                   disabled={isSwitchingCamera || callState.cameraOff}
-                  className="grid h-7 w-7 place-items-center rounded-full bg-white/10 text-white/80 transition hover:bg-white/20 hover:text-white active:scale-95 disabled:opacity-40 sm:hidden"
+                  className="grid h-6 w-6 sm:h-7 sm:w-7 place-items-center rounded-full bg-white/10 text-white/80 transition hover:bg-white/20 hover:text-white active:scale-95 disabled:opacity-40 sm:hidden"
                   title="Switch camera"
                   aria-label="Switch camera"
                 >
-                  <LuSwitchCamera className={`text-xs ${isSwitchingCamera ? "animate-spin" : ""}`} />
+                  <LuSwitchCamera className={`text-[10px] sm:text-xs ${isSwitchingCamera ? "animate-spin" : ""}`} />
                 </button>
               )}
               <button
                 type="button"
-                onClick={() => setIsCallMinimized(false)}
-                className="grid h-7 w-7 place-items-center rounded-full bg-white/10 text-emerald-400 transition hover:bg-white/20 hover:text-emerald-300 active:scale-95"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsCallMinimized(false);
+                }}
+                className="grid h-6 w-6 sm:h-7 sm:w-7 place-items-center rounded-full bg-white/10 text-emerald-400 transition hover:bg-white/20 hover:text-emerald-300 active:scale-95"
                 title="Maximize call"
                 aria-label="Maximize call"
               >
-                <FiMaximize2 className="text-xs" />
+                <FiMaximize2 className="text-[10px] sm:text-xs" />
               </button>
               <button
                 type="button"
-                onClick={endAudioCall}
-                className="grid h-7 w-7 place-items-center rounded-full bg-rose-500/20 text-rose-400 transition hover:bg-rose-500 hover:text-white active:scale-95"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  endAudioCall();
+                }}
+                className="grid h-6 w-6 sm:h-7 sm:w-7 place-items-center rounded-full bg-rose-500/20 text-rose-400 transition hover:bg-rose-500 hover:text-white active:scale-95"
                 title="End call"
                 aria-label="End call"
               >
-                <FiPhoneOff className="text-xs" />
+                <FiPhoneOff className="text-[10px] sm:text-xs" />
               </button>
             </div>
           </div>
 
           {/* Media / Video Display Area */}
-          <div
-            className="relative h-44 sm:h-52 w-full bg-[#0c1317] overflow-hidden cursor-pointer group"
-            onClick={() => setIsCallMinimized(false)}
-            title="Click to maximize"
-          >
+          <div className="relative h-32 sm:h-44 md:h-52 w-full bg-[#0c1317] overflow-hidden group">
             {isVideoActive ? (
               <>
                 <video
@@ -2174,7 +2288,7 @@ export default function HomePage() {
                   autoPlay
                   muted
                   playsInline
-                  className="h-full w-full object-cover"
+                  className="h-full w-full object-cover pointer-events-none"
                 />
 
                 {/* Local user camera PIP in bottom-right corner */}
@@ -2184,11 +2298,11 @@ export default function HomePage() {
                       e.stopPropagation();
                       switchCamera();
                     }}
-                    className="absolute bottom-2 right-2 z-10 h-16 w-12 sm:h-20 sm:w-16 overflow-hidden rounded-xl border border-white/20 bg-black/60 shadow-lg cursor-pointer transition active:scale-95"
+                    className="absolute bottom-1.5 right-1.5 z-10 h-12 w-9 sm:h-16 sm:w-12 md:h-20 md:w-16 overflow-hidden rounded-lg sm:rounded-xl border border-white/20 bg-black/60 shadow-lg cursor-pointer transition active:scale-95"
                     title="Tap to switch camera"
                   >
                     {callState.cameraOff ? (
-                      <div className="grid h-full w-full place-items-center bg-[#182229] text-[9px] font-medium text-white/70">
+                      <div className="grid h-full w-full place-items-center bg-[#182229] text-[8px] sm:text-[9px] font-medium text-white/70">
                         Off
                       </div>
                     ) : (
@@ -2198,12 +2312,12 @@ export default function HomePage() {
                           autoPlay
                           muted
                           playsInline
-                          className={`h-full w-full object-cover transition-transform duration-300 ${
+                          className={`h-full w-full object-cover pointer-events-none transition-transform duration-300 ${
                             cameraFacingMode === "user" ? "scale-x-[-1]" : "scale-x-1"
                           }`}
                         />
-                        <div className="absolute bottom-1 right-1 grid h-4 w-4 place-items-center rounded-full bg-black/70 text-white/90 sm:hidden">
-                          <LuSwitchCamera className="text-[8px]" />
+                        <div className="absolute bottom-0.5 right-0.5 grid h-3.5 w-3.5 sm:h-4 sm:w-4 place-items-center rounded-full bg-black/70 text-white/90 sm:hidden">
+                          <LuSwitchCamera className="text-[7px] sm:text-[8px]" />
                         </div>
                       </>
                     )}
@@ -2212,27 +2326,27 @@ export default function HomePage() {
               </>
             ) : (
               /* Audio call or connecting state */
-              <div className="flex h-full w-full flex-col items-center justify-center p-3 text-center">
-                <div className="relative flex h-16 w-16 sm:h-20 sm:w-20 items-center justify-center">
+              <div className="flex h-full w-full flex-col items-center justify-center p-2 sm:p-3 text-center pointer-events-none">
+                <div className="relative flex h-12 w-12 sm:h-16 sm:w-16 md:h-20 md:w-20 items-center justify-center">
                   <span className="quickchat-call-ripple quickchat-call-ripple-1" />
                   <span className="quickchat-call-ripple quickchat-call-ripple-2" />
                   {callState.peer?.profilePic ? (
                     <img
                       src={callState.peer.profilePic}
                       alt={callState.peer?.fullName || "Caller"}
-                      className="relative z-10 h-14 w-14 sm:h-16 sm:w-16 rounded-full border border-white/15 object-cover shadow-xl"
+                      className="relative z-10 h-10 w-10 sm:h-14 sm:w-14 md:h-16 md:w-16 rounded-full border border-white/15 object-cover shadow-xl"
                     />
                   ) : (
-                    <span className="relative z-10 grid h-14 w-14 sm:h-16 sm:w-16 place-items-center rounded-full border border-white/15 bg-emerald-500/20 text-xl font-bold text-emerald-300 shadow-xl">
+                    <span className="relative z-10 grid h-10 w-10 sm:h-14 sm:w-14 md:h-16 md:w-16 place-items-center rounded-full border border-white/15 bg-emerald-500/20 text-base sm:text-xl font-bold text-emerald-300 shadow-xl">
                       {getCallInitials(callState.peer?.fullName)}
                     </span>
                   )}
                 </div>
 
-                <p className="mt-2 text-xs sm:text-sm font-semibold text-white truncate max-w-[200px]">
+                <p className="mt-1 sm:mt-2 text-[11px] sm:text-xs md:text-sm font-semibold text-white truncate max-w-[160px] sm:max-w-[200px]">
                   {callState.peer?.fullName || "QuickChat user"}
                 </p>
-                <p className="text-[11px] font-medium text-emerald-400">
+                <p className="text-[10px] sm:text-[11px] font-medium text-emerald-400">
                   {callState.status === "active" ? formatCallDuration(callState.startedAt) : getCallStatusText()}
                 </p>
               </div>
@@ -2240,81 +2354,96 @@ export default function HomePage() {
 
             {/* Subtle duration pill on top-left of video if active */}
             {isVideoActive && callState.status === "active" && (
-              <div className="absolute top-2 left-2 z-10 rounded-md bg-black/60 px-2 py-0.5 text-[10px] font-semibold text-emerald-400 backdrop-blur-md">
+              <div className="absolute top-1.5 left-1.5 z-10 rounded-md bg-black/60 px-1.5 py-0.5 text-[9px] sm:text-[10px] font-semibold text-emerald-400 backdrop-blur-md pointer-events-none">
                 {formatCallDuration(callState.startedAt)}
               </div>
             )}
 
-            {/* Hover overlay hint */}
+            {/* Subtle move & expand hint on hover */}
             <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
-              <span className="inline-flex items-center gap-1 rounded-full bg-black/70 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-md">
-                <FiMaximize2 className="text-xs" /> Tap to expand
+              <span className="inline-flex items-center gap-1 rounded-full bg-black/70 px-2 py-0.5 text-[10px] sm:text-[11px] font-medium text-white backdrop-blur-md">
+                <FiMaximize2 className="text-[10px] sm:text-xs" /> Tap to expand
               </span>
             </div>
           </div>
 
           {/* Bottom Action Controls Bar (WhatsApp style) */}
-          <div className="flex h-14 items-center justify-around border-t border-white/10 bg-[#182229]/95 px-3">
+          <div className="flex h-11 sm:h-13 md:h-14 items-center justify-around border-t border-white/10 bg-[#182229]/95 px-2 sm:px-3">
             <button
               type="button"
-              onClick={toggleCallCamera}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleCallCamera();
+              }}
               disabled={!isVideoCall || !["calling", "connecting", "active"].includes(callState.status)}
-              className={`grid h-9 w-9 place-items-center rounded-full transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed ${
+              className={`grid h-7 w-7 sm:h-8 sm:w-8 md:h-9 md:w-9 place-items-center rounded-full transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed ${
                 callState.cameraOff ? "bg-white text-black" : "bg-white/10 text-white/90 hover:bg-white/20"
               }`}
               title={callState.cameraOff ? "Camera on" : "Camera off"}
               aria-label="Toggle camera"
             >
-              {callState.cameraOff ? <FiVideoOff className="text-sm" /> : <FiVideo className="text-sm" />}
+              {callState.cameraOff ? <FiVideoOff className="text-xs sm:text-sm" /> : <FiVideo className="text-xs sm:text-sm" />}
             </button>
 
             <button
               type="button"
-              onClick={toggleCallMute}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleCallMute();
+              }}
               disabled={callState.status !== "active"}
-              className={`grid h-9 w-9 place-items-center rounded-full transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed ${
+              className={`grid h-7 w-7 sm:h-8 sm:w-8 md:h-9 md:w-9 place-items-center rounded-full transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed ${
                 callState.muted ? "bg-white text-black" : "bg-white/10 text-white/90 hover:bg-white/20"
               }`}
               title={callState.muted ? "Unmute mic" : "Mute mic"}
               aria-label="Toggle mute"
             >
-              {callState.muted ? <FiMicOff className="text-sm" /> : <FiMic className="text-sm" />}
+              {callState.muted ? <FiMicOff className="text-xs sm:text-sm" /> : <FiMic className="text-xs sm:text-sm" />}
             </button>
 
             {isVideoCall && (
               <button
                 type="button"
-                onClick={switchCamera}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  switchCamera();
+                }}
                 disabled={isSwitchingCamera || callState.cameraOff}
-                className="grid h-9 w-9 place-items-center rounded-full bg-white/10 text-white/90 transition hover:bg-white/20 active:scale-95 disabled:opacity-40 sm:hidden"
+                className="grid h-7 w-7 sm:h-8 sm:w-8 md:h-9 md:w-9 place-items-center rounded-full bg-white/10 text-white/90 transition hover:bg-white/20 active:scale-95 disabled:opacity-40 sm:hidden"
                 title="Switch front/back camera"
                 aria-label="Switch camera"
               >
-                <LuSwitchCamera className={`text-sm ${isSwitchingCamera ? "animate-spin" : ""}`} />
+                <LuSwitchCamera className={`text-xs sm:text-sm ${isSwitchingCamera ? "animate-spin" : ""}`} />
               </button>
             )}
 
             <button
               type="button"
-              onClick={toggleCallSpeaker}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleCallSpeaker();
+              }}
               disabled={!["calling", "connecting", "active"].includes(callState.status)}
-              className={`grid h-9 w-9 place-items-center rounded-full transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed ${
+              className={`grid h-7 w-7 sm:h-8 sm:w-8 md:h-9 md:w-9 place-items-center rounded-full transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed ${
                 callState.speakerOn ? "bg-white text-black" : "bg-white/10 text-white/90 hover:bg-white/20"
               }`}
               title={callState.speakerOn ? "Speaker on" : "Speaker off"}
               aria-label="Toggle speaker"
             >
-              <FiVolume2 className="text-sm" />
+              <FiVolume2 className="text-xs sm:text-sm" />
             </button>
 
             <button
               type="button"
-              onClick={endAudioCall}
-              className="grid h-10 w-12 place-items-center rounded-2xl bg-rose-500 text-white shadow-lg shadow-rose-950/40 transition hover:bg-rose-600 active:scale-95"
+              onClick={(e) => {
+                e.stopPropagation();
+                endAudioCall();
+              }}
+              className="grid h-7 w-9 sm:h-8 sm:w-10 md:h-10 md:w-12 place-items-center rounded-xl sm:rounded-2xl bg-rose-500 text-white shadow-lg shadow-rose-950/40 transition hover:bg-rose-600 active:scale-95"
               title="End call"
               aria-label="End call"
             >
-              <FiPhoneOff className="text-base" />
+              <FiPhoneOff className="text-xs sm:text-sm md:text-base" />
             </button>
           </div>
         </div>
