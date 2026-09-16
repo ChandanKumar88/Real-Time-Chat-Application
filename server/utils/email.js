@@ -1,13 +1,27 @@
 const nodemailer = require("nodemailer");
 
 function getTransporter() {
-  const host = process.env.SMTP_HOST;
-  const port = Number(process.env.SMTP_PORT || 587);
+  const host = process.env.SMTP_HOST || "smtp.gmail.com";
+  const port = Number(process.env.SMTP_PORT || 465);
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASS;
 
-  if (!host || !user || !pass) {
-    throw new Error("Email service is not configured");
+  if (!user || !pass) {
+    throw new Error("Email service is not configured (SMTP credentials missing)");
+  }
+
+  const isGmail =
+    (host && host.toLowerCase().includes("gmail")) ||
+    (user && user.toLowerCase().endsWith("@gmail.com"));
+
+  if (isGmail) {
+    return nodemailer.createTransport({
+      service: "gmail",
+      auth: { user, pass },
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 15000,
+    });
   }
 
   return nodemailer.createTransport({
@@ -15,6 +29,9 @@ function getTransporter() {
     port,
     secure: process.env.SMTP_SECURE === "true" || port === 465,
     auth: { user, pass },
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
   });
 }
 

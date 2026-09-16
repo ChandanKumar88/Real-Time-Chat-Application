@@ -274,7 +274,10 @@ async function resolveDecryptedMediaUrl(mediaInfo) {
 }
 
 const ChatContext = createContext(null);
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || "http://localhost:5000";
+const rawSocketUrl = import.meta.env.VITE_SOCKET_URL;
+const SOCKET_URL = (rawSocketUrl && typeof rawSocketUrl === "string"
+  ? rawSocketUrl.split("||")[0].replace(/^["'\s]+|["'\s]+$/g, "").trim()
+  : "") || "http://localhost:5000";
 const USERS_POLL_INTERVAL_MS = 8000;
 const MESSAGES_POLL_INTERVAL_MS = 900;
 const PRESENCE_PING_INTERVAL_MS = 20000;

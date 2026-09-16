@@ -1,14 +1,26 @@
 import axios from "axios";
 
-const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL;
-const configuredBackendUrl = import.meta.env.VITE_BACKEND_URL;
+function resolveApiBaseUrl() {
+  const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL;
+  if (configuredBaseUrl && typeof configuredBaseUrl === "string") {
+    const cleaned = configuredBaseUrl.split("||")[0].replace(/^["'\s]+|["'\s]+$/g, "").trim();
+    if (cleaned.startsWith("http")) return cleaned.replace(/\/$/, "");
+  }
 
-const API_BASE_URL =
-  configuredBaseUrl ||
-  (configuredBackendUrl ? `${configuredBackendUrl.replace(/\/$/, "")}/api` : "http://localhost:5000/api");
+  const configuredBackendUrl = import.meta.env.VITE_BACKEND_URL;
+  if (configuredBackendUrl && typeof configuredBackendUrl === "string") {
+    const cleaned = configuredBackendUrl.split("||")[0].replace(/^["'\s]+|["'\s]+$/g, "").trim();
+    if (cleaned.startsWith("http")) return `${cleaned.replace(/\/$/, "")}/api`;
+  }
+
+  return "http://localhost:5000/api";
+}
+
+const API_BASE_URL = resolveApiBaseUrl();
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
+  timeout: 30000,
 });
 
 let manualLogoutInProgress = false;
