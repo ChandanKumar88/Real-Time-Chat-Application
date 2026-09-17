@@ -67,7 +67,7 @@ async function sendViaBrevoHttp({ apiKey, to, subject, html, text, fromName, fro
     body: JSON.stringify({
       sender: {
         name: fromName || "QuickChat",
-        email: fromEmail || process.env.BREVO_FROM_EMAIL || "quickchat.authmail@gmail.com",
+        email: process.env.BREVO_FROM_EMAIL || fromEmail || process.env.SMTP_USER || "quickchat.authmail@gmail.com",
       },
       to: [{ email: to }],
       subject,
@@ -123,7 +123,7 @@ async function sendEmail({ to, subject, text, html }) {
         html,
         text,
         fromName: appName,
-        fromEmail: process.env.SMTP_USER || "quickchat.authmail@gmail.com",
+        fromEmail: process.env.BREVO_FROM_EMAIL || process.env.SMTP_USER || "quickchat.authmail@gmail.com",
       });
       return;
     } catch (err) {
