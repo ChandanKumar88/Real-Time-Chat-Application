@@ -222,14 +222,16 @@ export default function AuthPage({ mode = "login" }) {
 
       try {
         setAuthBusy(true);
-        const result = await verifySignupOtp({ email: otpSentTo, otp, password: form.password });
-        const updatedUser = await setupEncryptionPassphrase(chatPassphrase, result.data.user);
-        if (updatedUser.encryptionRecoveryRequired || updatedUser.encryptionPassphraseRequired) {
+        const result = await verifySignupOtp(
+          { email: otpSentTo, otp, password: form.password },
+          chatPassphrase
+        );
+        if (result.data.user.encryptionRecoveryRequired || result.data.user.encryptionPassphraseRequired) {
           toast.error("Create the encrypted chat backup from the original browser.");
           return;
         }
 
-        toast.success("Account verified and chat recovery passphrase set");
+        toast.success("Account created and verified successfully!");
         setChatPassphrase("");
         setConfirmChatPassphrase("");
         navigate("/");

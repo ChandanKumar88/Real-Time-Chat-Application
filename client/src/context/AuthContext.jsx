@@ -97,31 +97,52 @@ export function AuthProvider({ children }) {
     return data;
   }, []);
 
-  const verifySignupOtp = useCallback(async (payload) => {
+  const verifySignupOtp = useCallback(async (payload, passphrase) => {
     const { data } = await api.post("/auth/signup/verify", payload);
     endManualLogout();
     localStorage.setItem("chat_token", data.data.token);
-    const nextUser = {
-      ...data.data.user,
-      encryptionPassphraseRequired: needsRecoveryPassphrase(data.data.user),
-      encryptionRecoveryRequired: false,
+
+    let nextUser = data.data.user;
+    const recoveryPassphrase = passphrase || payload.password;
+    if (recoveryPassphrase) {
+      try {
+        nextUser = await syncRecoverableEncryptionKey(nextUser, recoveryPassphrase);
+      } catch (err) {
+        console.warn("Encryption key sync during signup verification:", err);
+      }
+    }
+
+    const finalUser = {
+      ...nextUser,
+      encryptionPassphraseRequired: needsRecoveryPassphrase(nextUser),
+      encryptionRecoveryRequired: Boolean(nextUser.encryptionRecoveryRequired),
     };
-    setUser(nextUser);
-    return { ...data, data: { ...data.data, user: nextUser } };
-  }, []);
+    setUser(finalUser);
+    return { ...data, data: { ...data.data, user: finalUser } };
+  }, [syncRecoverableEncryptionKey]);
 
   const login = useCallback(async (payload) => {
     const { data } = await api.post("/auth/login", payload);
     endManualLogout();
     localStorage.setItem("chat_token", data.data.token);
-    const nextUser = {
-      ...data.data.user,
-      encryptionPassphraseRequired: needsRecoveryPassphrase(data.data.user),
-      encryptionRecoveryRequired: false,
+
+    let nextUser = data.data.user;
+    if (payload.password) {
+      try {
+        nextUser = await syncRecoverableEncryptionKey(nextUser, payload.password);
+      } catch {
+        // If recovery passphrase differs from account password, fallback to manual unlock
+      }
+    }
+
+    const finalUser = {
+      ...nextUser,
+      encryptionPassphraseRequired: needsRecoveryPassphrase(nextUser),
+      encryptionRecoveryRequired: Boolean(nextUser.encryptionRecoveryRequired),
     };
-    setUser(nextUser);
-    return { ...data, data: { ...data.data, user: nextUser } };
-  }, []);
+    setUser(finalUser);
+    return { ...data, data: { ...data.data, user: finalUser } };
+  }, [syncRecoverableEncryptionKey]);
 
   const googleLogin = useCallback(async (credential) => {
     const { data } = await api.post("/auth/google", { credential });
