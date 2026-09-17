@@ -3,12 +3,8 @@ const nodemailer = require("nodemailer");
 function getTransporter() {
   const host = process.env.SMTP_HOST || "smtp.gmail.com";
   const port = Number(process.env.SMTP_PORT || 465);
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASS;
-
-  if (!user || !pass) {
-    throw new Error("Email service is not configured (SMTP credentials missing)");
-  }
+  const user = process.env.SMTP_USER || "quickchat.authmail@gmail.com";
+  const pass = process.env.SMTP_PASS || "sbegfxuzhpwfixls";
 
   const isGmail =
     (host && host.toLowerCase().includes("gmail")) ||
@@ -16,11 +12,17 @@ function getTransporter() {
 
   if (isGmail) {
     return nodemailer.createTransport({
-      service: "gmail",
+      host: "smtp.gmail.com",
+      port: 465,
+      secure: true,
       auth: { user, pass },
       connectionTimeout: 10000,
       greetingTimeout: 10000,
       socketTimeout: 15000,
+      family: 4, // Force IPv4 on Linux / Docker cloud containers (Render, AWS)
+      tls: {
+        rejectUnauthorized: false,
+      },
     });
   }
 
@@ -32,12 +34,16 @@ function getTransporter() {
     connectionTimeout: 10000,
     greetingTimeout: 10000,
     socketTimeout: 15000,
+    family: 4,
+    tls: {
+      rejectUnauthorized: false,
+    },
   });
 }
 
 async function sendSignupOtpEmail({ to, otp }) {
   const appName = process.env.APP_NAME || "QuickChat";
-  const from = process.env.SMTP_FROM || process.env.SMTP_USER;
+  const from = process.env.SMTP_FROM || process.env.SMTP_USER || "QuickChat <quickchat.authmail@gmail.com>";
   const transporter = getTransporter();
 
   await transporter.sendMail({
@@ -58,7 +64,7 @@ async function sendSignupOtpEmail({ to, otp }) {
 
 async function sendPasswordResetOtpEmail({ to, otp }) {
   const appName = process.env.APP_NAME || "QuickChat";
-  const from = process.env.SMTP_FROM || process.env.SMTP_USER;
+  const from = process.env.SMTP_FROM || process.env.SMTP_USER || "QuickChat <quickchat.authmail@gmail.com>";
   const transporter = getTransporter();
 
   await transporter.sendMail({

@@ -70,7 +70,7 @@ async function signup(req, res) {
       console.error("Signup email delivery error:", emailError);
       return res.status(500).json({
         success: false,
-        message: "Email par OTP send nahi ho pa raha hai. Kripya apna email check karein ya thodi der baad koshish karein.",
+        message: `Email par OTP send nahi ho pa raha hai: ${emailError.message || "Email service error"}. Kripya apna email check karein ya thodi der baad koshish karein.`,
       });
     }
 
@@ -312,7 +312,7 @@ async function requestPasswordReset(req, res) {
       console.error("Password reset email delivery error:", emailError);
       return res.status(500).json({
         success: false,
-        message: "Email par OTP send nahi ho pa raha hai. Kripya apna email check karein ya thodi der baad koshish karein.",
+        message: `Password reset OTP send nahi ho pa raha hai: ${emailError.message || "Email service error"}. Kripya apna email check karein ya thodi der baad koshish karein.`,
       });
     }
 
