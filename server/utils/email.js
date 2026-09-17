@@ -1,52 +1,52 @@
-const dns = require("dns");
+const dns = require("dns").promises;
 const nodemailer = require("nodemailer");
 
-// Force IPv4 lookup for all socket and TLS connections
-function ipv4Lookup(hostname, options, callback) {
-  return dns.lookup(hostname, { family: 4 }, callback);
+let cachedIpv4 = null;
+let cachedIpv4Expiry = 0;
+
+async function resolveIpv4Host(host) {
+  const now = Date.now();
+  if (cachedIpv4 && cachedIpv4Expiry > now) {
+    return cachedIpv4;
+  }
+  try {
+    const addresses = await dns.resolve4(host);
+    if (addresses && addresses.length > 0) {
+      cachedIpv4 = addresses[0];
+      cachedIpv4Expiry = now + 10 * 60 * 1000; // cache for 10 minutes
+      return cachedIpv4;
+    }
+  } catch (err) {
+    console.warn(`dns.resolve4 for ${host} failed, falling back to hostname:`, err.message);
+  }
+  return host;
 }
 
-function getTransporter() {
-  const host = process.env.SMTP_HOST || "smtp.gmail.com";
+async function getTransporter() {
+  const rawHost = process.env.SMTP_HOST || "smtp.gmail.com";
   const port = Number(process.env.SMTP_PORT || 465);
   const user = process.env.SMTP_USER || "quickchat.authmail@gmail.com";
   const pass = process.env.SMTP_PASS || "sbegfxuzhpwfixls";
 
   const isGmail =
-    (host && host.toLowerCase().includes("gmail")) ||
+    (rawHost && rawHost.toLowerCase().includes("gmail")) ||
     (user && user.toLowerCase().endsWith("@gmail.com"));
 
-  if (isGmail) {
-    return nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 465,
-      secure: true,
-      auth: { user, pass },
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
-      socketTimeout: 15000,
-      family: 4,
-      lookup: ipv4Lookup,
-      tls: {
-        rejectUnauthorized: false,
-        servername: "smtp.gmail.com",
-      },
-    });
-  }
+  const targetHostName = isGmail ? "smtp.gmail.com" : rawHost;
+  // Resolve host to concrete IPv4 address to eliminate Linux/Docker IPv6 ENETUNREACH issues completely
+  const resolvedHostIp = await resolveIpv4Host(targetHostName);
 
   return nodemailer.createTransport({
-    host,
-    port,
-    secure: process.env.SMTP_SECURE === "true" || port === 465,
+    host: resolvedHostIp,
+    port: 465,
+    secure: true,
     auth: { user, pass },
     connectionTimeout: 10000,
     greetingTimeout: 10000,
     socketTimeout: 15000,
-    family: 4,
-    lookup: ipv4Lookup,
     tls: {
       rejectUnauthorized: false,
-      servername: host,
+      servername: targetHostName,
     },
   });
 }
@@ -54,7 +54,7 @@ function getTransporter() {
 async function sendSignupOtpEmail({ to, otp }) {
   const appName = process.env.APP_NAME || "QuickChat";
   const from = process.env.SMTP_FROM || process.env.SMTP_USER || "QuickChat <quickchat.authmail@gmail.com>";
-  const transporter = getTransporter();
+  const transporter = await getTransporter();
 
   await transporter.sendMail({
     from,
@@ -75,7 +75,7 @@ async function sendSignupOtpEmail({ to, otp }) {
 async function sendPasswordResetOtpEmail({ to, otp }) {
   const appName = process.env.APP_NAME || "QuickChat";
   const from = process.env.SMTP_FROM || process.env.SMTP_USER || "QuickChat <quickchat.authmail@gmail.com>";
-  const transporter = getTransporter();
+  const transporter = await getTransporter();
 
   await transporter.sendMail({
     from,
