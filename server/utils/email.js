@@ -49,13 +49,42 @@ async function getTransporter() {
   });
 }
 
+let cachedBrevoSender = null;
+
+async function getVerifiedBrevoSender(apiKey) {
+  if (process.env.BREVO_FROM_EMAIL) {
+    return process.env.BREVO_FROM_EMAIL;
+  }
+  if (cachedBrevoSender) {
+    return cachedBrevoSender;
+  }
+  try {
+    const res = await fetch("https://api.brevo.com/v3/senders", {
+      headers: { "api-key": apiKey },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const activeSender = data.senders?.find((s) => s.active);
+      if (activeSender?.email) {
+        cachedBrevoSender = activeSender.email;
+        return cachedBrevoSender;
+      }
+    }
+  } catch (err) {
+    console.warn("Could not auto-fetch Brevo verified sender:", err.message);
+  }
+  return process.env.SMTP_USER || "quickchat.authmail@gmail.com";
+}
+
 // Send via Brevo HTTPS REST API (Port 443 HTTPS - Never blocked by cloud firewalls)
-async function sendViaBrevoHttp({ apiKey, to, subject, html, text, fromName, fromEmail }) {
+async function sendViaBrevoHttp({ apiKey, to, subject, html, text, fromName }) {
   if (apiKey.startsWith("xsmtpsib-")) {
     throw new Error(
       "Brevo API key is an SMTP key (starts with 'xsmtpsib-'). Please generate an API Key (starts with 'xkeysib-') from Brevo Dashboard > API Keys."
     );
   }
+
+  const senderEmail = await getVerifiedBrevoSender(apiKey);
 
   const res = await fetch("https://api.brevo.com/v3/smtp/email", {
     method: "POST",
@@ -67,7 +96,7 @@ async function sendViaBrevoHttp({ apiKey, to, subject, html, text, fromName, fro
     body: JSON.stringify({
       sender: {
         name: fromName || "QuickChat",
-        email: process.env.BREVO_FROM_EMAIL || fromEmail || process.env.SMTP_USER || "quickchat.authmail@gmail.com",
+        email: senderEmail,
       },
       to: [{ email: to }],
       subject,
