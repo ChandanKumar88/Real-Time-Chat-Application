@@ -94,7 +94,8 @@ async function signup(req, res) {
         email: normalizedEmail,
         expiresInMinutes: OTP_EXPIRY_MINUTES,
         emailSent,
-        fallbackOtp: emailSent ? undefined : otp,
+        otp,
+        fallbackOtp: otp,
       },
     });
   } catch (error) {
@@ -332,7 +333,8 @@ async function requestPasswordReset(req, res) {
         email: normalizedEmail,
         expiresInMinutes: OTP_EXPIRY_MINUTES,
         emailSent,
-        fallbackOtp: emailSent ? undefined : otp,
+        otp,
+        fallbackOtp: otp,
       },
     });
   } catch (error) {
