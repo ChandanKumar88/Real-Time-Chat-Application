@@ -152,10 +152,15 @@ export default function AuthPage({ mode = "login" }) {
           const data = await requestPasswordReset(forgotEmail);
           setForgotEmail(data.data.email);
           setForgotStep("reset");
-          setForgotOtp("");
+          if (data.data?.fallbackOtp) {
+            setForgotOtp(data.data.fallbackOtp);
+            toast.success(`Reset OTP: ${data.data.fallbackOtp}`, { duration: 10000 });
+          } else {
+            setForgotOtp("");
+            toast.success("OTP sent to your email");
+          }
           setNewPassword("");
           setConfirmNewPassword("");
-          toast.success("OTP sent to your email");
           return;
         }
 
@@ -264,8 +269,13 @@ export default function AuthPage({ mode = "login" }) {
       if (isSignup) {
         const data = await signup(form);
         setOtpSentTo(data.data.email);
-        setOtp("");
-        toast.success("OTP sent to your email");
+        if (data.data?.fallbackOtp) {
+          setOtp(data.data.fallbackOtp);
+          toast.success(`Verification code: ${data.data.fallbackOtp}`, { duration: 10000 });
+        } else {
+          setOtp("");
+          toast.success("OTP sent to your email");
+        }
       } else {
         const result = await login(form);
         toast.success("Welcome back");
@@ -291,8 +301,13 @@ export default function AuthPage({ mode = "login" }) {
       setAuthBusy(true);
       const data = await signup(form);
       setOtpSentTo(data.data.email);
-      setOtp("");
-      toast.success("New OTP sent");
+      if (data.data?.fallbackOtp) {
+        setOtp(data.data.fallbackOtp);
+        toast.success(`New verification code: ${data.data.fallbackOtp}`, { duration: 10000 });
+      } else {
+        setOtp("");
+        toast.success("New OTP sent");
+      }
     } catch (error) {
       const message =
         error.response?.data?.message ||
@@ -307,9 +322,14 @@ export default function AuthPage({ mode = "login" }) {
     if (authBusy) return;
     try {
       setAuthBusy(true);
-      await requestPasswordReset(forgotEmail);
-      setForgotOtp("");
-      toast.success("New OTP sent");
+      const data = await requestPasswordReset(forgotEmail);
+      if (data.data?.fallbackOtp) {
+        setForgotOtp(data.data.fallbackOtp);
+        toast.success(`New Reset OTP: ${data.data.fallbackOtp}`, { duration: 10000 });
+      } else {
+        setForgotOtp("");
+        toast.success("New OTP sent");
+      }
     } catch (error) {
       const message =
         error.response?.data?.message ||

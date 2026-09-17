@@ -24,7 +24,6 @@ async function resolveIpv4Host(host) {
 
 async function getTransporter() {
   const rawHost = process.env.SMTP_HOST || "smtp.gmail.com";
-  const port = Number(process.env.SMTP_PORT || 465);
   const user = process.env.SMTP_USER || "quickchat.authmail@gmail.com";
   const pass = process.env.SMTP_PASS || "sbegfxuzhpwfixls";
 
@@ -40,9 +39,9 @@ async function getTransporter() {
     port: 465,
     secure: true,
     auth: { user, pass },
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 15000,
+    connectionTimeout: 2500, // fast 2.5s timeout so cloud firewall drops don't block user
+    greetingTimeout: 2500,
+    socketTimeout: 3000,
     tls: {
       rejectUnauthorized: false,
       servername: targetHostName,
@@ -50,7 +49,7 @@ async function getTransporter() {
   });
 }
 
-// Send via Brevo HTTPS REST API (Port 443 - 100% works on Render free tier)
+// Send via Brevo HTTPS REST API (Port 443 HTTPS - Never blocked by cloud firewalls)
 async function sendViaBrevoHttp({ apiKey, to, subject, html, text, fromName, fromEmail }) {
   const res = await fetch("https://api.brevo.com/v3/smtp/email", {
     method: "POST",
@@ -78,7 +77,7 @@ async function sendViaBrevoHttp({ apiKey, to, subject, html, text, fromName, fro
   return data;
 }
 
-// Send via Resend HTTPS REST API (Port 443 - 100% works on Render free tier)
+// Send via Resend HTTPS REST API (Port 443 HTTPS - Never blocked by cloud firewalls)
 async function sendViaResendHttp({ apiKey, to, subject, html, text, from }) {
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
@@ -107,7 +106,7 @@ async function sendEmail({ to, subject, text, html }) {
   const brevoApiKey = process.env.BREVO_API_KEY;
   const resendApiKey = process.env.RESEND_API_KEY;
 
-  // 1. Try Brevo HTTP API (Port 443 - Never blocked on Render/Cloud)
+  // 1. Try Brevo HTTP API (Port 443)
   if (brevoApiKey) {
     try {
       await sendViaBrevoHttp({
@@ -125,7 +124,7 @@ async function sendEmail({ to, subject, text, html }) {
     }
   }
 
-  // 2. Try Resend HTTP API (Port 443 - Never blocked on Render/Cloud)
+  // 2. Try Resend HTTP API (Port 443)
   if (resendApiKey) {
     try {
       await sendViaResendHttp({
@@ -142,7 +141,7 @@ async function sendEmail({ to, subject, text, html }) {
     }
   }
 
-  // 3. Fallback to Direct Nodemailer SMTP (Works on local and VPS/open port cloud hosts)
+  // 3. Fallback to Direct Nodemailer SMTP
   const from = process.env.SMTP_FROM || process.env.SMTP_USER || "QuickChat <quickchat.authmail@gmail.com>";
   const transporter = await getTransporter();
 
