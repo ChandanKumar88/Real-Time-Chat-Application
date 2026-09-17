@@ -152,13 +152,8 @@ export default function AuthPage({ mode = "login" }) {
           const data = await requestPasswordReset(forgotEmail);
           setForgotEmail(data.data.email);
           setForgotStep("reset");
-          if (data.data?.fallbackOtp) {
-            setForgotOtp(data.data.fallbackOtp);
-            toast.success(`Reset OTP: ${data.data.fallbackOtp}`, { duration: 10000 });
-          } else {
-            setForgotOtp("");
-            toast.success("OTP sent to your email");
-          }
+          setForgotOtp("");
+          toast.success("OTP sent to your email");
           setNewPassword("");
           setConfirmNewPassword("");
           return;
@@ -269,13 +264,8 @@ export default function AuthPage({ mode = "login" }) {
       if (isSignup) {
         const data = await signup(form);
         setOtpSentTo(data.data.email);
-        if (data.data?.fallbackOtp) {
-          setOtp(data.data.fallbackOtp);
-          toast.success(`Verification code: ${data.data.fallbackOtp}`, { duration: 10000 });
-        } else {
-          setOtp("");
-          toast.success("OTP sent to your email");
-        }
+        setOtp("");
+        toast.success("OTP sent to your email");
       } else {
         const result = await login(form);
         toast.success("Welcome back");
@@ -301,13 +291,8 @@ export default function AuthPage({ mode = "login" }) {
       setAuthBusy(true);
       const data = await signup(form);
       setOtpSentTo(data.data.email);
-      if (data.data?.fallbackOtp) {
-        setOtp(data.data.fallbackOtp);
-        toast.success(`New verification code: ${data.data.fallbackOtp}`, { duration: 10000 });
-      } else {
-        setOtp("");
-        toast.success("New OTP sent");
-      }
+      setOtp("");
+      toast.success("New OTP sent to your email");
     } catch (error) {
       const message =
         error.response?.data?.message ||
@@ -322,14 +307,9 @@ export default function AuthPage({ mode = "login" }) {
     if (authBusy) return;
     try {
       setAuthBusy(true);
-      const data = await requestPasswordReset(forgotEmail);
-      if (data.data?.fallbackOtp) {
-        setForgotOtp(data.data.fallbackOtp);
-        toast.success(`New Reset OTP: ${data.data.fallbackOtp}`, { duration: 10000 });
-      } else {
-        setForgotOtp("");
-        toast.success("New OTP sent");
-      }
+      await requestPasswordReset(forgotEmail);
+      setForgotOtp("");
+      toast.success("New OTP sent to your email");
     } catch (error) {
       const message =
         error.response?.data?.message ||
@@ -448,11 +428,6 @@ export default function AuthPage({ mode = "login" }) {
                   <p className="mb-2 text-sm leading-6 text-slate-300">
                     Enter the 6 digit OTP sent to <span className="font-semibold text-white">{forgotEmail}</span>, then create a new password.
                   </p>
-                  {forgotOtp && (
-                    <div className="mb-3 rounded-xl border border-violet-500/30 bg-violet-500/15 px-3 py-2 text-center text-xs font-medium text-violet-200 shadow-inner">
-                      Reset Code: <span className="font-bold tracking-widest text-white text-sm">{forgotOtp}</span>
-                    </div>
-                  )}
                   <input
                     className="mb-3 w-full rounded-xl border border-white/10 bg-[#141627]/70 px-4 py-3 text-center text-lg tracking-[0.35em] text-slate-100 placeholder:text-slate-500 outline-none transition duration-200 focus:border-violet-500 focus:bg-[#181a30] focus:ring-1 focus:ring-violet-500"
                     placeholder="000000"
@@ -554,11 +529,6 @@ export default function AuthPage({ mode = "login" }) {
               <p className="mb-2 text-sm leading-6 text-slate-300">
                 Enter the 6 digit code sent to <span className="font-semibold text-white">{otpSentTo}</span>.
               </p>
-              {otp && (
-                <div className="mb-3 rounded-xl border border-violet-500/30 bg-violet-500/15 px-3 py-2 text-center text-xs font-medium text-violet-200 shadow-inner">
-                  Verification Code: <span className="font-bold tracking-widest text-white text-sm">{otp}</span>
-                </div>
-              )}
               <input
                 className="mb-4 w-full rounded-xl border border-white/10 bg-[#141627]/70 px-4 py-3 text-center text-lg tracking-[0.35em] text-slate-100 placeholder:text-slate-500 outline-none transition duration-200 focus:border-violet-500 focus:bg-[#181a30] focus:ring-1 focus:ring-violet-500"
                 placeholder="000000"

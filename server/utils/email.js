@@ -39,9 +39,9 @@ async function getTransporter() {
     port: 465,
     secure: true,
     auth: { user, pass },
-    connectionTimeout: 2500, // fast 2.5s timeout so cloud firewall drops don't block user
-    greetingTimeout: 2500,
-    socketTimeout: 3000,
+    connectionTimeout: 8000,
+    greetingTimeout: 8000,
+    socketTimeout: 10000,
     tls: {
       rejectUnauthorized: false,
       servername: targetHostName,
@@ -51,6 +51,12 @@ async function getTransporter() {
 
 // Send via Brevo HTTPS REST API (Port 443 HTTPS - Never blocked by cloud firewalls)
 async function sendViaBrevoHttp({ apiKey, to, subject, html, text, fromName, fromEmail }) {
+  if (apiKey.startsWith("xsmtpsib-")) {
+    throw new Error(
+      "Brevo API key is an SMTP key (starts with 'xsmtpsib-'). Please generate an API Key (starts with 'xkeysib-') from Brevo Dashboard > API Keys."
+    );
+  }
+
   const res = await fetch("https://api.brevo.com/v3/smtp/email", {
     method: "POST",
     headers: {
@@ -105,8 +111,9 @@ async function sendEmail({ to, subject, text, html }) {
   const appName = process.env.APP_NAME || "QuickChat";
   const brevoApiKey = process.env.BREVO_API_KEY;
   const resendApiKey = process.env.RESEND_API_KEY;
+  const errors = [];
 
-  // 1. Try Brevo HTTP API (Port 443)
+  // 1. Try Brevo HTTP API (Port 443 HTTPS)
   if (brevoApiKey) {
     try {
       await sendViaBrevoHttp({
@@ -120,11 +127,12 @@ async function sendEmail({ to, subject, text, html }) {
       });
       return;
     } catch (err) {
-      console.warn("Brevo HTTP send failed, trying fallback:", err.message);
+      console.warn("Brevo HTTP send failed:", err.message);
+      errors.push(`Brevo: ${err.message}`);
     }
   }
 
-  // 2. Try Resend HTTP API (Port 443)
+  // 2. Try Resend HTTP API (Port 443 HTTPS)
   if (resendApiKey) {
     try {
       await sendViaResendHttp({
@@ -137,21 +145,30 @@ async function sendEmail({ to, subject, text, html }) {
       });
       return;
     } catch (err) {
-      console.warn("Resend HTTP send failed, trying fallback:", err.message);
+      console.warn("Resend HTTP send failed:", err.message);
+      errors.push(`Resend: ${err.message}`);
     }
   }
 
   // 3. Fallback to Direct Nodemailer SMTP
-  const from = process.env.SMTP_FROM || process.env.SMTP_USER || "QuickChat <quickchat.authmail@gmail.com>";
-  const transporter = await getTransporter();
+  try {
+    const from = process.env.SMTP_FROM || process.env.SMTP_USER || "QuickChat <quickchat.authmail@gmail.com>";
+    const transporter = await getTransporter();
 
-  await transporter.sendMail({
-    from,
-    to,
-    subject,
-    text,
-    html,
-  });
+    await transporter.sendMail({
+      from,
+      to,
+      subject,
+      text,
+      html,
+    });
+    return;
+  } catch (err) {
+    console.warn("Direct SMTP send failed:", err.message);
+    errors.push(`SMTP: ${err.message}`);
+  }
+
+  throw new Error(`Email delivery failed (${errors.join("; ")})`);
 }
 
 async function sendSignupOtpEmail({ to, otp }) {

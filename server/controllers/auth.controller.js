@@ -64,12 +64,14 @@ async function signup(req, res) {
     const otpHash = await bcrypt.hash(otp, 10);
     const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
 
-    let emailSent = false;
     try {
       await sendSignupOtpEmail({ to: normalizedEmail, otp });
-      emailSent = true;
     } catch (emailError) {
-      console.warn("Signup email delivery failed (likely cloud firewall port block), enabling fallback OTP:", emailError.message);
+      console.error("Signup email delivery failed:", emailError);
+      return res.status(500).json({
+        success: false,
+        message: `OTP email send nahi ho paaya: ${emailError.message || "Email service error"}. Please check email service configuration.`,
+      });
     }
 
     await PendingSignup.findOneAndUpdate(
@@ -89,13 +91,10 @@ async function signup(req, res) {
 
     return res.status(200).json({
       success: true,
-      message: emailSent ? "OTP sent to your email" : "OTP generated",
+      message: "OTP sent to your email",
       data: {
         email: normalizedEmail,
         expiresInMinutes: OTP_EXPIRY_MINUTES,
-        emailSent,
-        otp,
-        fallbackOtp: otp,
       },
     });
   } catch (error) {
@@ -307,12 +306,14 @@ async function requestPasswordReset(req, res) {
     const otpHash = await bcrypt.hash(otp, 10);
     const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
 
-    let emailSent = false;
     try {
       await sendPasswordResetOtpEmail({ to: normalizedEmail, otp });
-      emailSent = true;
     } catch (emailError) {
-      console.warn("Password reset email delivery failed (likely cloud firewall port block), enabling fallback OTP:", emailError.message);
+      console.error("Password reset email delivery failed:", emailError);
+      return res.status(500).json({
+        success: false,
+        message: `Password reset OTP email send nahi ho paaya: ${emailError.message || "Email service error"}. Please check email service configuration.`,
+      });
     }
 
     await PasswordResetOtp.findOneAndUpdate(
@@ -328,13 +329,10 @@ async function requestPasswordReset(req, res) {
 
     return res.json({
       success: true,
-      message: emailSent ? "Password reset OTP sent to your email" : "Password reset OTP generated",
+      message: "Password reset OTP sent to your email",
       data: {
         email: normalizedEmail,
         expiresInMinutes: OTP_EXPIRY_MINUTES,
-        emailSent,
-        otp,
-        fallbackOtp: otp,
       },
     });
   } catch (error) {
