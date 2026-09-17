@@ -49,6 +49,28 @@ async function getTransporter() {
   });
 }
 
+// Send via Google Apps Script HTTPS Webhook (Sends directly from your real Gmail inbox: quickchat.authmail@gmail.com without any brevosend.com domain)
+async function sendViaGoogleAppsScriptHttp({ scriptUrl, secret, to, subject, html, text, fromName }) {
+  const res = await fetch(scriptUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      secret: secret || process.env.GMAIL_RELAY_SECRET || "quickchat_secret_relay",
+      to,
+      subject,
+      text,
+      html,
+      fromName: fromName || "QuickChat",
+    }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.error) {
+    throw new Error(data.error || `Google Apps Script relay error ${res.status}`);
+  }
+  return data;
+}
+
 // Send via Brevo HTTPS REST API (Port 443 HTTPS - Never blocked by cloud firewalls)
 async function sendViaBrevoHttp({ apiKey, to, subject, html, text, fromName, fromEmail }) {
   if (apiKey.startsWith("xsmtpsib-")) {
@@ -109,11 +131,31 @@ async function sendViaResendHttp({ apiKey, to, subject, html, text, from }) {
 
 async function sendEmail({ to, subject, text, html }) {
   const appName = process.env.APP_NAME || "QuickChat";
+  const gmailRelayUrl = process.env.GMAIL_RELAY_URL;
   const brevoApiKey = process.env.BREVO_API_KEY;
   const resendApiKey = process.env.RESEND_API_KEY;
   const errors = [];
 
-  // 1. Try Brevo HTTP API (Port 443 HTTPS)
+  // 1. Try Google Apps Script Relay (100% genuine Gmail sender: quickchat.authmail@gmail.com over HTTPS Port 443)
+  if (gmailRelayUrl) {
+    try {
+      await sendViaGoogleAppsScriptHttp({
+        scriptUrl: gmailRelayUrl,
+        secret: process.env.GMAIL_RELAY_SECRET,
+        to,
+        subject,
+        html,
+        text,
+        fromName: appName,
+      });
+      return;
+    } catch (err) {
+      console.warn("Gmail Webhook Relay send failed:", err.message);
+      errors.push(`Gmail Relay: ${err.message}`);
+    }
+  }
+
+  // 2. Try Brevo HTTP API (Port 443 HTTPS)
   if (brevoApiKey) {
     try {
       await sendViaBrevoHttp({
