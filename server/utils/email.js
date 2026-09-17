@@ -1,4 +1,10 @@
+const dns = require("dns");
 const nodemailer = require("nodemailer");
+
+// Force IPv4 lookup for all socket and TLS connections
+function ipv4Lookup(hostname, options, callback) {
+  return dns.lookup(hostname, { family: 4 }, callback);
+}
 
 function getTransporter() {
   const host = process.env.SMTP_HOST || "smtp.gmail.com";
@@ -19,9 +25,11 @@ function getTransporter() {
       connectionTimeout: 10000,
       greetingTimeout: 10000,
       socketTimeout: 15000,
-      family: 4, // Force IPv4 on Linux / Docker cloud containers (Render, AWS)
+      family: 4,
+      lookup: ipv4Lookup,
       tls: {
         rejectUnauthorized: false,
+        servername: "smtp.gmail.com",
       },
     });
   }
@@ -35,8 +43,10 @@ function getTransporter() {
     greetingTimeout: 10000,
     socketTimeout: 15000,
     family: 4,
+    lookup: ipv4Lookup,
     tls: {
       rejectUnauthorized: false,
+      servername: host,
     },
   });
 }
