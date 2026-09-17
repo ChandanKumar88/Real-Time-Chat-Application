@@ -13,11 +13,11 @@ async function resolveIpv4Host(host) {
     const addresses = await dns.resolve4(host);
     if (addresses && addresses.length > 0) {
       cachedIpv4 = addresses[0];
-      cachedIpv4Expiry = now + 10 * 60 * 1000; // cache for 10 minutes
+      cachedIpv4Expiry = now + 10 * 60 * 1000;
       return cachedIpv4;
     }
   } catch (err) {
-    console.warn(`dns.resolve4 for ${host} failed, falling back to hostname:`, err.message);
+    console.warn(`dns.resolve4 for ${host} failed:`, err.message);
   }
   return host;
 }
@@ -33,7 +33,6 @@ async function getTransporter() {
     (user && user.toLowerCase().endsWith("@gmail.com"));
 
   const targetHostName = isGmail ? "smtp.gmail.com" : rawHost;
-  // Resolve host to concrete IPv4 address to eliminate Linux/Docker IPv6 ENETUNREACH issues completely
   const resolvedHostIp = await resolveIpv4Host(targetHostName);
 
   return nodemailer.createTransport({
@@ -51,13 +50,114 @@ async function getTransporter() {
   });
 }
 
-async function sendSignupOtpEmail({ to, otp }) {
+// Send via Brevo HTTPS REST API (Port 443 - 100% works on Render free tier)
+async function sendViaBrevoHttp({ apiKey, to, subject, html, text, fromName, fromEmail }) {
+  const res = await fetch("https://api.brevo.com/v3/smtp/email", {
+    method: "POST",
+    headers: {
+      "api-key": apiKey,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({
+      sender: {
+        name: fromName || "QuickChat",
+        email: fromEmail || process.env.BREVO_FROM_EMAIL || "quickchat.authmail@gmail.com",
+      },
+      to: [{ email: to }],
+      subject,
+      htmlContent: html,
+      textContent: text,
+    }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.message || data.error || `Brevo HTTP error ${res.status}`);
+  }
+  return data;
+}
+
+// Send via Resend HTTPS REST API (Port 443 - 100% works on Render free tier)
+async function sendViaResendHttp({ apiKey, to, subject, html, text, from }) {
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: from || process.env.RESEND_FROM || "QuickChat <onboarding@resend.dev>",
+      to: [to],
+      subject,
+      html,
+      text,
+    }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.message || `Resend HTTP error ${res.status}`);
+  }
+  return data;
+}
+
+async function sendEmail({ to, subject, text, html }) {
   const appName = process.env.APP_NAME || "QuickChat";
+  const brevoApiKey = process.env.BREVO_API_KEY;
+  const resendApiKey = process.env.RESEND_API_KEY;
+
+  // 1. Try Brevo HTTP API (Port 443 - Never blocked on Render/Cloud)
+  if (brevoApiKey) {
+    try {
+      await sendViaBrevoHttp({
+        apiKey: brevoApiKey,
+        to,
+        subject,
+        html,
+        text,
+        fromName: appName,
+        fromEmail: process.env.SMTP_USER || "quickchat.authmail@gmail.com",
+      });
+      return;
+    } catch (err) {
+      console.warn("Brevo HTTP send failed, trying fallback:", err.message);
+    }
+  }
+
+  // 2. Try Resend HTTP API (Port 443 - Never blocked on Render/Cloud)
+  if (resendApiKey) {
+    try {
+      await sendViaResendHttp({
+        apiKey: resendApiKey,
+        to,
+        subject,
+        html,
+        text,
+        from: process.env.SMTP_FROM,
+      });
+      return;
+    } catch (err) {
+      console.warn("Resend HTTP send failed, trying fallback:", err.message);
+    }
+  }
+
+  // 3. Fallback to Direct Nodemailer SMTP (Works on local and VPS/open port cloud hosts)
   const from = process.env.SMTP_FROM || process.env.SMTP_USER || "QuickChat <quickchat.authmail@gmail.com>";
   const transporter = await getTransporter();
 
   await transporter.sendMail({
     from,
+    to,
+    subject,
+    text,
+    html,
+  });
+}
+
+async function sendSignupOtpEmail({ to, otp }) {
+  const appName = process.env.APP_NAME || "QuickChat";
+  await sendEmail({
     to,
     subject: `${appName} signup verification code`,
     text: `Your ${appName} verification code is ${otp}. It will expire in 10 minutes.`,
@@ -74,11 +174,7 @@ async function sendSignupOtpEmail({ to, otp }) {
 
 async function sendPasswordResetOtpEmail({ to, otp }) {
   const appName = process.env.APP_NAME || "QuickChat";
-  const from = process.env.SMTP_FROM || process.env.SMTP_USER || "QuickChat <quickchat.authmail@gmail.com>";
-  const transporter = await getTransporter();
-
-  await transporter.sendMail({
-    from,
+  await sendEmail({
     to,
     subject: `${appName} password reset code`,
     text: `Your ${appName} password reset code is ${otp}. It will expire in 10 minutes.`,
